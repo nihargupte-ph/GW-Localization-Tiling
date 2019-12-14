@@ -9,7 +9,11 @@ import matplotlib.pyplot as plt
 
 class Circle:
 
+    """ Circle class, each circle in the agent is represented by one of these circles """
+
     def __init__(self, _radius, _center, step = 100):
+
+        """ Creates cirlce given radius and center.  """
         
         #Var inits
         self.center = geometry.Point(_center)
@@ -18,6 +22,8 @@ class Circle:
         self.polygon = geometry.Polygon([[p.x, p.y] for p in self.point_list])
 
     def move_circle(self, amt_left, amt_right, step = 100):
+
+        """ Moves said circle by certain amount left or right.  """
 
         self.center = geometry.Point(self.center.x + amt_left, self.center.y + amt_right)
         self.point_list = [geometry.Point(self.radius * np.cos(theta) + self.center.x, self.radius * np.sin(theta) + self.center.y) for theta in np.linspace(0, 2 * np.pi, step)]
@@ -43,7 +49,10 @@ class Agent:
 
         for i in range(len(self.circle_list)):
             x,y = self.circle_list[i].polygon.exterior.xy
-            plt.plot(x,y)
+            plt.plot(x,y, c='b')
+
+        plt.legend([self.length], loc='upper left')
+            
         
 def double_intersection(polygon_list):
    
@@ -79,22 +88,32 @@ def total_area_fraction(bounding_box, polygon_list):
 
     return bounding_box.intersection(cascaded_union(polygon_list)).area / bounding_box.area
 
+def remove_irrelevent_circles(agent, region):
+    for circle in agent.circle_list:
+        if region.intersection(circle.polygon) == 0:
+            print(region.intersection(circle.polygon))
+            agent.circle_list.remove(circle)
+
 #GA part
-def init_agents(radius, soft_bounding_box, length = 100):
+def init_agents(radius, soft_bounding_box, length = 50):
 
     return [Agent(radius, soft_bounding_box, length) for _ in range(population)]
 
 def fitness(agent_list, region, bounding_box):
 
-    alpha = 1
-    beta = 1
-    chi = 1
+    alpha = 10
+    beta = 20
+    chi = 10
+    gamma = 20
 
     for agent in agent_list:
 
         agent_polygon_list = [circle.polygon for circle  in agent.circle_list]
+
         agent.fitness = (alpha * intersection_region_fraction(region, agent_polygon_list)) - (beta * double_intersection(agent_polygon_list))\
             - (chi * total_area_fraction(bounding_box, agent_polygon_list))
+        #print((alpha * intersection_region_fraction(region, agent_polygon_list)), (beta * double_intersection(agent_polygon_list))\
+            #, chi * total_area_fraction(bounding_box, agent_polygon_list), gamma * (agent.length/100), agent.fitness)
 
     return agent_list
 
@@ -102,7 +121,7 @@ def selection(agent_list):
 
     agent_list = sorted(agent_list, key=lambda agent: agent.fitness, reverse=True)
     #DARWINISM HAHHAA
-    agent_list = agent_list[:int(.2 * len(agent_list))]
+    agent_list = agent_list[:int(.5 * len(agent_list))]
 
     return agent_list
 
@@ -138,6 +157,9 @@ def crossover(agent_list, region):
         child2 = Agent(parent1.radius, parent1.bounding_box, parent1.length)
         child1.circle_list = parent1_circle_half_1 + parent2_circle_half_2
         child2.circle_list = parent2_circle_half_1 + parent1_circle_half_2
+        
+        remove_irrelevent_circles(child1, region)
+        remove_irrelevent_circles(child2, region)
 
         offspring.append(child1)
         offspring.append(child2)
@@ -152,14 +174,14 @@ def mutation(agent_list):
 
         for i, param in enumerate(agent.circle_list):
                 
-            if random.uniform(0, 1) <= .05:
+            if random.uniform(0, 1) <= .3:
 
                 agent.circle_list.pop(i)
                 agent.length -= 1
 
-            if random.uniform(0, 1) <= .2:
+            if random.uniform(0, 1) <= .4:
 
-                agent.circle_list[i].move_circle(random.uniform(-1, 1), random.uniform(-1, 1))
+                agent.circle_list[i - 1].move_circle(random.uniform(-1, 1), random.uniform(-1, 1))
 
     return agent_list
 
@@ -179,13 +201,15 @@ def ga(region, soft_bounding_box, hard_bounding_box):
         print()
         print("Executing stragllers")
         agent_list = selection(agent_list)
-        print("Darwin has spoken")
+        print("Darwin has spoken, {} candidates remain".format(len(agent_list)))
         print()
-        print(len(agent_list))
         agent_list[0].plot_agent()
+        plt.xlim([soft_bounding_box[0][0], soft_bounding_box[1][0]])
+        plt.ylim([soft_bounding_box[0][1], soft_bounding_box[1][1]])
         plt.plot(*region.exterior.xy)
         plt.savefig("frames/generation_{0:03d}".format(generation))
         print("frame saved in frames folder")
+        plt.close()
         print()
         print("Beginning candlelight dinner")
         agent_list = crossover(agent_list, region)
