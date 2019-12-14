@@ -1,4 +1,5 @@
 import numpy as np
+import os, shutil
 from shapely import geometry
 from shapely import ops
 from shapely.ops import cascaded_union
@@ -34,16 +35,21 @@ class Circle:
 
 class Agent:
 
-    def __init__(self, _radius, bounding_box, length):
+    def __init__(self, radius=None, bounding_box=None, length=None, adam=True):
 
         """ bounding_box is a list w/ bottom left corner and top right corner """
 
         self.fitness = -1000 #Dummy value 
-        self.length = length
-        self.radius = _radius
+        self.radius = radius
         self.bounding_box = bounding_box
-        self.circle_list = [Circle(self.radius, (random.uniform(bounding_box[0][0], bounding_box[1][0]),\
+        self.length = length
+
+        if adam == True:
+            self.circle_list = [Circle(self.radius, (random.uniform(bounding_box[0][0], bounding_box[1][0]),\
             random.uniform(bounding_box[0][1], bounding_box[1][1])))  for _ in range(length)]
+
+    def update_agent(self):
+        self.length = len(self.circle_list)
 
     def plot_agent(self):
 
@@ -90,21 +96,19 @@ def total_area_fraction(bounding_box, polygon_list):
 
 def remove_irrelevent_circles(agent, region):
     for circle in agent.circle_list:
-        if region.intersection(circle.polygon) == 0:
-            print(region.intersection(circle.polygon))
+        if region.intersection(circle.polygon).area < .001:
             agent.circle_list.remove(circle)
 
 #GA part
 def init_agents(radius, soft_bounding_box, length = 50):
 
-    return [Agent(radius, soft_bounding_box, length) for _ in range(population)]
+    return [Agent(radius=radius, bounding_box=soft_bounding_box, length=length) for _ in range(population)]
 
 def fitness(agent_list, region, bounding_box):
 
-    alpha = 10
+    alpha = 100
     beta = 20
-    chi = 10
-    gamma = 20
+    chi = 5
 
     for agent in agent_list:
 
@@ -112,8 +116,8 @@ def fitness(agent_list, region, bounding_box):
 
         agent.fitness = (alpha * intersection_region_fraction(region, agent_polygon_list)) - (beta * double_intersection(agent_polygon_list))\
             - (chi * total_area_fraction(bounding_box, agent_polygon_list))
-        #print((alpha * intersection_region_fraction(region, agent_polygon_list)), (beta * double_intersection(agent_polygon_list))\
-            #, chi * total_area_fraction(bounding_box, agent_polygon_list), gamma * (agent.length/100), agent.fitness)
+        print((alpha * intersection_region_fraction(region, agent_polygon_list)), (beta * double_intersection(agent_polygon_list))\
+            , chi * total_area_fraction(bounding_box, agent_polygon_list), agent.fitness)
 
     return agent_list
 
@@ -130,33 +134,35 @@ def crossover(agent_list, region):
     """ Crossover is determined by randomly splitting polygon in half and then taking circles from each side. It'll probably mess up on the
     boundary tbh but I couldn't think of another crossover function """
 
-    def getExtrapoledLine(p1,p2):
-        'Creates a line extrapoled in p1->p2 direction'
-        EXTRAPOL_RATIO = 10
-        a = (p2[0]+EXTRAPOL_RATIO*(p1[0]-p2[0]), p2[1]+EXTRAPOL_RATIO*(p1[1]-p2[1]))
-        b = (p1[0]+EXTRAPOL_RATIO*(p2[0]-p1[0]), p1[1]+EXTRAPOL_RATIO*(p2[1]-p1[1]))
-        return geometry.LineString([a,b])
+    # def getExtrapoledLine(p1,p2):
+    #     'Creates a line extrapoled in p1->p2 direction'
+    #     EXTRAPOL_RATIO = 10
+    #     a = (p2[0]+EXTRAPOL_RATIO*(p1[0]-p2[0]), p2[1]+EXTRAPOL_RATIO*(p1[1]-p2[1]))
+    #     b = (p1[0]+EXTRAPOL_RATIO*(p2[0]-p1[0]), p1[1]+EXTRAPOL_RATIO*(p2[1]-p1[1]))
+    #     return geometry.LineString([a,b])
 
-    line = getExtrapoledLine((region.centroid.x, region.centroid.y), (region.centroid.x + random.uniform(-1, 1), region.centroid.y\
-        + random.uniform(-1, 1)))
+    # line = getExtrapoledLine((region.centroid.x, region.centroid.y), (region.centroid.x + random.uniform(-1, 1), region.centroid.y\
+    #     + random.uniform(-1, 1)))
 
-    merged = ops.linemerge([region.boundary, line])
-    borders = ops.unary_union(merged)
-    polygons = list(ops.polygonize(borders))
+    # merged = ops.linemerge([region.boundary, line])
+    # borders = ops.unary_union(merged)
+    # polygons = list(ops.polygonize(borders))
 
     offspring = []
     for _ in range(round(len(agent_list) / 2)):
 
         parent1 = random.choice(agent_list)
         parent2 = random.choice(agent_list)
-        parent1_circle_half_1 = [circle for circle in parent1.circle_list if circle.center.within(polygons[0])]
-        parent1_circle_half_2 = [circle for circle in parent1.circle_list if circle.center.within(polygons[1])]
-        parent2_circle_half_1 = [circle for circle in parent2.circle_list if circle.center.within(polygons[0])]
-        parent2_circle_half_2 = [circle for circle in parent2.circle_list if circle.center.within(polygons[1])]
+        parent1_circle_half_1 = [circle for circle in parent1.circle_list[:len(parent1.circle_list)//2]]
+        parent1_circle_half_2 = [circle for circle in parent1.circle_list[len(parent1.circle_list)//2:]]
+        parent2_circle_half_1 = [circle for circle in parent2.circle_list[:len(parent2.circle_list)//2]]
+        parent2_circle_half_2 = [circle for circle in parent2.circle_list[len(parent2.circle_list)//2:]]
         child1 = Agent(parent1.radius, parent1.bounding_box, parent1.length)
         child2 = Agent(parent1.radius, parent1.bounding_box, parent1.length)
         child1.circle_list = parent1_circle_half_1 + parent2_circle_half_2
         child2.circle_list = parent2_circle_half_1 + parent1_circle_half_2
+        child1.update_agent()
+        child2.update_agent()
         
         remove_irrelevent_circles(child1, region)
         remove_irrelevent_circles(child2, region)
@@ -177,11 +183,15 @@ def mutation(agent_list):
             if random.uniform(0, 1) <= .3:
 
                 agent.circle_list.pop(i)
-                agent.length -= 1
+                add_or_sub = random.choice((0,1))
+                if add_or_sub == 0:
+                    agent.length += 1
+                elif add_or_sub == 1:
+                    agent.length -= 1
 
             if random.uniform(0, 1) <= .4:
 
-                agent.circle_list[i - 1].move_circle(random.uniform(-1, 1), random.uniform(-1, 1))
+                agent.circle_list[i - 1].move_circle(random.uniform(-.1, .1), random.uniform(-.1, .1))
 
     return agent_list
 
@@ -196,16 +206,16 @@ def ga(region, soft_bounding_box, hard_bounding_box):
         print("\ngeneration number: {}".format(generation))
 
         print("Determining how much they lift..")
-        agent_list = fitness(agent_list, region, hard_bounding_box)
+        agent_list = fitness(agent_list, region, soft_bounding_box)
         print("Sucessful")
         print()
         print("Executing stragllers")
         agent_list = selection(agent_list)
         print("Darwin has spoken, {} candidates remain".format(len(agent_list)))
-        print()
+        agent_list.sort(key=lambda x: x.fitness, reverse=True)
         agent_list[0].plot_agent()
-        plt.xlim([soft_bounding_box[0][0], soft_bounding_box[1][0]])
-        plt.ylim([soft_bounding_box[0][1], soft_bounding_box[1][1]])
+        plt.xlim([hard_bounding_box[0][0], hard_bounding_box[1][0]])
+        plt.ylim([hard_bounding_box[0][1], hard_bounding_box[1][1]])
         plt.plot(*region.exterior.xy)
         plt.savefig("frames/generation_{0:03d}".format(generation))
         print("frame saved in frames folder")
@@ -231,8 +241,20 @@ global generations
 generations = 20
 
 soft_bounding_box = [(-1,-1), (1,1)]
-hard_bounding_box = [(-5, -5), (5, 5)]
+hard_bounding_box = [(-2, -2), (2, 2)]
 
-test_polygon = geometry.Polygon([(0,0), (0,1), (1,1), (1,0)])
+test_polygon = geometry.Polygon([(-.5,-.5), (.5,-.5), (.5,.5), (-.5,.5)])
+
+#Clearing folder before we add new frames
+folder = '/home/n/Documents/Research/GW-Localization-Tiling/frames'
+for filename in os.listdir(folder):
+    file_path = os.path.join(folder, filename)
+    try:
+        if os.path.isfile(file_path) or os.path.islink(file_path):
+            os.unlink(file_path)
+        elif os.path.isdir(file_path):
+            shutil.rmtree(file_path)
+    except Exception as e:
+        print('Failed to delete %s. Reason: %s' % (file_path, e))
 
 ga(test_polygon, soft_bounding_box, hard_bounding_box)
