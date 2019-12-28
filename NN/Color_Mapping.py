@@ -67,7 +67,6 @@ class Circle:
             else:
                 ax.fill(x,y, c=color, zorder=zorder)
 
-
 class CircleCollection:
 
     def __init__(self, _radius, _centers):
@@ -119,42 +118,42 @@ class CircleCollection:
             else:
                 ax.fill(x3,y3, c=color3, zorder=zorder)
 
-#Testing functions section
-import matplotlib.pyplot as plt
-from matplotlib.path import Path
-import matplotlib.patches as patches
-import random
+# #Testing and plotting functions section
+# import matplotlib.pyplot as plt
+# from matplotlib.path import Path
+# import matplotlib.patches as patches
+# import random
 
-colors = ["#ade6e6", "#ade6ad", "#e6ade6", "#e6adad"]
+# colors = ["#ade6e6", "#ade6ad", "#e6ade6", "#e6adad"]
 
-n = 8 # Number of possibly sharp edges
-r = .7 # magnitude of the perturbation from the unit circle, 
-# should be between 0 and 1
-N = n*3+1 # number of points in the Path
-# There is the initial point and 3 points per cubic bezier curve. Thus, the curve will only pass though n points, which will be the sharp edges, the other 2 modify the shape of the bezier curve
+# n = 8 # Number of possibly sharp edges
+# r = .7 # magnitude of the perturbation from the unit circle, 
+# # should be between 0 and 1
+# N = n*3+1 # number of points in the Path
+# # There is the initial point and 3 points per cubic bezier curve. Thus, the curve will only pass though n points, which will be the sharp edges, the other 2 modify the shape of the bezier curve
 
-angles = np.linspace(0,2*np.pi,N)
+# angles = np.linspace(0,2*np.pi,N)
 
-verts = np.stack((np.cos(angles),np.sin(angles))).T*(2*r*np.random.random(N)+1-r)[:,None]
+# verts = np.stack((np.cos(angles),np.sin(angles))).T*(2*r*np.random.random(N)+1-r)[:,None]
 
-fig = plt.figure(num=None, figsize=(6, 6), dpi=80, facecolor='w', edgecolor='k')
-ax = fig.add_subplot(111)
+# fig = plt.figure(num=None, figsize=(6, 6), dpi=80, facecolor='w', edgecolor='k')
+# ax = fig.add_subplot(111)
 
-#Generating localization region, called region here
-region = geometry.Polygon(verts)
+# #Generating localization region, called region here
+# region = geometry.Polygon(verts)
 
-ax.fill(*region.exterior.xy, color=colors[0], zorder=1)
+# ax.fill(*region.exterior.xy, color=colors[0], zorder=1)
 
 
-#Adding in a few random circles
-random_centers = [(random.uniform(-1.8, 1.8), random.uniform(-1.8, 1.8)) for i in range(0, 100)]
-circ_collection = CircleCollection(.2, random_centers)
-circ_collection.plot_intersections(region, colors[1], colors[2], colors[3], ax=ax, zorder=2)
+# #Adding in a few random circles
+# random_centers = [(random.uniform(-1.8, 1.8), random.uniform(-1.8, 1.8)) for i in range(0, 100)]
+# circ_collection = CircleCollection(.2, random_centers)
+# circ_collection.plot_intersections(region, colors[1], colors[2], colors[3], ax=ax, zorder=2)
 
-temp_circle_list = [Circle(.2,i) for i in random_centers]
-for circle in temp_circle_list:
-    circle.plot_circle(color='k', ax=ax)
+# temp_circle_list = [Circle(.2,i) for i in random_centers]
+# for circle in temp_circle_list:
+#     circle.plot_circle(color='k', ax=ax)
 
-ax.set_xlim([-2, 2])
-ax.set_ylim([-2, 2])
-plt.show()
+# ax.set_xlim([-2, 2])
+# ax.set_ylim([-2, 2])
+# plt.show()

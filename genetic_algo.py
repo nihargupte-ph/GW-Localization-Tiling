@@ -1,66 +1,92 @@
 import numpy as np
-import os, shutil
+import os
+import shutil
 from shapely import geometry
 from shapely import ops
 from shapely.ops import cascaded_union
 from rtree import index
 import random
 import matplotlib.pyplot as plt
+from scipy.stats import expon
 
 
-class Circle:
+def get_circle(radius, center, step=100):
+    """ Returns shapely polygon given radius and center """
 
-    """ Circle class, each circle in the agent is represented by one of these circles """
+    point_list = [geometry.Point(radius * np.cos(theta) + center[0], radius * np.sin(
+        theta) + center[1]) for theta in np.linspace(0, 2 * np.pi, step)]
+    polygon = geometry.Polygon([[p.x, p.y] for p in point_list])
 
-    def __init__(self, _radius, _center, step = 100):
+    return polygon
 
-        """ Creates cirlce given radius and center.  """
-        
-        #Var inits
-        self.center = geometry.Point(_center)
-        self.radius = _radius
-        self.point_list = [geometry.Point(self.radius * np.cos(theta) + self.center.x, self.radius * np.sin(theta) + self.center.y) for theta in np.linspace(0, 2 * np.pi, step)]
-        self.polygon = geometry.Polygon([[p.x, p.y] for p in self.point_list])
-
-    def move_circle(self, amt_left, amt_right, step = 100):
-
-        """ Moves said circle by certain amount left or right.  """
-
-        self.center = geometry.Point(self.center.x + amt_left, self.center.y + amt_right)
-        self.point_list = [geometry.Point(self.radius * np.cos(theta) + self.center.x, self.radius * np.sin(theta) + self.center.y) for theta in np.linspace(0, 2 * np.pi, step)]
-        self.polygon = geometry.Polygon([[p.x, p.y] for p in self.point_list])
-
-    def print_properties(self):
-        print("center: {} \n \n radius: {} \n \n points: {} \n \n polygon: {}".format(self.center, self.radius, self.point_list, self.polygon))
 
 class Agent:
 
     def __init__(self, radius=None, bounding_box=None, length=None, adam=True):
+        """ Agent object"""
 
-        """ bounding_box is a list w/ bottom left corner and top right corner """
-
-        self.fitness = -1000 #Dummy value 
+        self.fitness = -1000  # Dummy value
         self.radius = radius
         self.bounding_box = bounding_box
         self.length = length
 
         if adam == True:
-            self.circle_list = [Circle(self.radius, (random.uniform(bounding_box[0][0], bounding_box[1][0]),\
-            random.uniform(bounding_box[0][1], bounding_box[1][1])))  for _ in range(length)]
+            self.circle_list = [get_circle(radius, (random.uniform(bounding_box["bottom left"][0], bounding_box["bottom right"][0]), random.uniform(
+                bounding_box["bottom left"][1], bounding_box["top left"][1]))) for _ in range(length)]
 
     def update_agent(self):
         self.length = len(self.circle_list)
 
-    def plot_agent(self):
+    def get_intersections(self, region, bounding_box):
+        """ Returns all types of intersections. self_intersection, self_intersection_fraction, region_intersection, region_nonintersection, region_intersection_fraction """
 
-        for i in range(len(self.circle_list)):
-            x,y = self.circle_list[i].polygon.exterior.xy
-            plt.plot(x,y, c='b')
+        self_intersection, self_intersection_fraction = double_intersection(
+            self.circle_list)
+        region_intersection, region_nonintersection, region_intersection_fraction, region_nonintersection_fraction = intersection_region(
+            region, self.circle_list, bounding_box)
 
-        plt.legend([self.length], loc='upper left')
-            
-        
+        return self_intersection, self_intersection_fraction, region_intersection, region_nonintersection, region_intersection_fraction, region_nonintersection_fraction
+
+    def plot_agent(self, region, color1, color2, color3, bounding_box, ax=None, zorder=1):
+
+        """ Plots circle intersection and non interesection with region as well as self intersection"""
+
+        #makes sure everything is nice and updated
+        self.update_agent()
+
+        self_intersection, _, region_intersection, region_nonintersection, _, _ = self.get_intersections(
+            region, bounding_box)
+
+        for p1 in self_intersection:
+            x1, y1 = p1.exterior.xy
+
+            if ax == None:
+                plt.fill(x1, y1, c=color1, zorder=zorder+.1)
+            else:
+                ax.fill(x1, y1, c=color1, zorder=zorder+.1)
+
+        for p2 in region_intersection:
+            x2, y2 = p2.exterior.xy
+
+            if ax == None:
+                plt.fill(x2, y2, c=color2, zorder=zorder)
+            else:
+                ax.fill(x2, y2, c=color2, zorder=zorder)
+
+        for p3 in region_nonintersection:
+            x3, y3 = p3.exterior.xy
+
+            if ax == None:
+                plt.fill(x3, y3, c=color3, zorder=zorder)
+            else:
+                ax.fill(x3, y3, c=color3, zorder=zorder)
+
+        plt.legend(["Fitness: {}".format(self.fitness), "Number circles: {}".format(self.length)], loc='upper left')
+
+
 def double_intersection(polygon_list):
+
+    """ Returns intersection between polygons in polygon_list and the area of their intersection """
    
     intersections = []
     idx = index.Index()       
@@ -75,34 +101,38 @@ def double_intersection(polygon_list):
 
     intersection = cascaded_union(intersections)
     intersection_area = intersection.area
-    return intersection_area
+    return intersection, intersection_area
 
-# Can come back to this later if the genetic code is getting stuck
-# def triple_intersection(polygon_list):
-#     listpoly = [a.intersection(b) for a, b in combinations(polygon_list, 2)]
-#     rings = [geometry.LineString(list(pol.exterior.coords)) for pol in listpoly]
-#     union = ops.unary_union(rings)
-#     result = [geom for geom in ops.polygonize(union)]
-#     return [intersect.area for intersect in result]
+def intersection_region(region, polygon_list, bounding_box):
 
-def intersection_region_fraction(region, polygon_list):
-    return region.intersection(cascaded_union(polygon_list)).area / region.area
+    """ Returns regions of intersection between the polygon_list and the region. Also returns the non intersection between polygon_list and the region. It will also return the fraction which the polygon list has covered """
 
-def total_area_fraction(bounding_box, polygon_list):
+    bounding_box = geometry.Polygon([bounding_box["bottom left"], bounding_box["bottom right"], bounding_box["top right"], bounding_box["top right"]])
 
-    bounding_box = geometry.box(bounding_box[0][0], bounding_box[0][1], bounding_box[1][0], bounding_box[1][1])
+    polygon_union = cascaded_union(polygon_list)
+    intersection = region.intersection(polygon_union)
+    fraction_overlap = intersection.area / region.area
+    nonoverlap = polygon_union.difference(region)
+    fraction_nonoverlap = nonoverlap.area / bounding_box.area
 
-    return bounding_box.intersection(cascaded_union(polygon_list)).area / bounding_box.area
+    return intersection, nonoverlap, fraction_overlap, fraction_nonoverlap
 
-def remove_irrelevent_circles(agent, region):
-    for circle in agent.circle_list:
-        if region.intersection(circle.polygon).area < .001:
-            agent.circle_list.remove(circle)
 
-#GA part
-def init_agents(radius, soft_bounding_box, length = 50):
 
-    return [Agent(radius=radius, bounding_box=soft_bounding_box, length=length) for _ in range(population)]
+def get_highest_area(region, circle_list):
+    """ From a circle collection returns an ordered list of circles ordered by how much they intersect with the region """
+
+    temp_list = [(i, circle) for i, circle in enumerate(circle_list)]
+    _, ret_list = zip(*sorted(temp_list,key=lambda x: region.intersection(x[1]).area))
+
+    return ret_list
+# GA part
+
+
+def init_agents(radius, bounding_box, length=50):
+
+    return [Agent(radius=radius, bounding_box=bounding_box, length=length) for _ in range(population)]
+
 
 def fitness(agent_list, region, bounding_box):
 
@@ -112,25 +142,26 @@ def fitness(agent_list, region, bounding_box):
 
     for agent in agent_list:
 
-        agent_polygon_list = [circle.polygon for circle  in agent.circle_list]
+        _, _, frac_overlap, frac_nonoverlap = intersection_region(region, agent.circle_list, bounding_box)
+        _, frac_self_intersection = double_intersection(agent.circle_list)
 
-        agent.fitness = (alpha * intersection_region_fraction(region, agent_polygon_list)) - (beta * double_intersection(agent_polygon_list))\
-            - (chi * total_area_fraction(bounding_box, agent_polygon_list))
-        print((alpha * intersection_region_fraction(region, agent_polygon_list)), (beta * double_intersection(agent_polygon_list))\
-            , chi * total_area_fraction(bounding_box, agent_polygon_list), agent.fitness)
+        agent.fitness = (alpha * frac_overlap) - (beta * frac_nonoverlap) - (chi * frac_self_intersection)
 
     return agent_list
 
+
 def selection(agent_list):
 
-    agent_list = sorted(agent_list, key=lambda agent: agent.fitness, reverse=True)
-    #DARWINISM HAHHAA
+    agent_list = sorted(
+        agent_list, key=lambda agent: agent.fitness, reverse=True)
+    # DARWINISM HAHHAA
     agent_list = agent_list[:int(.5 * len(agent_list))]
 
     return agent_list
 
-def crossover(agent_list, region):
 
+
+def crossover(agent_list, region):
     """ Crossover is determined by randomly splitting polygon in half and then taking circles from each side. It'll probably mess up on the
     boundary tbh but I couldn't think of another crossover function """
 
@@ -153,19 +184,46 @@ def crossover(agent_list, region):
 
         parent1 = random.choice(agent_list)
         parent2 = random.choice(agent_list)
-        parent1_circle_half_1 = [circle for circle in parent1.circle_list[:len(parent1.circle_list)//2]]
-        parent1_circle_half_2 = [circle for circle in parent1.circle_list[len(parent1.circle_list)//2:]]
-        parent2_circle_half_1 = [circle for circle in parent2.circle_list[:len(parent2.circle_list)//2]]
-        parent2_circle_half_2 = [circle for circle in parent2.circle_list[len(parent2.circle_list)//2:]]
-        child1 = Agent(parent1.radius, parent1.bounding_box, parent1.length)
-        child2 = Agent(parent1.radius, parent1.bounding_box, parent1.length)
+
+        #Generates an index distirubtion, we are getting a sorted list later but we want more elements from the beginning of the sorted list rather than the end
+        # total_circles = parent1.circle_list + parent2.circle_list
+        # sorted_circles = get_highest_area(region, total_circles)
+
+        # data_expon = expon.rvs(scale=1,loc=0,size=len(sorted_circles))
+        # prob_dist = sorted(data_expon, reverse=True)
+        # circle_pool = np.random.choice(sorted_circles, p=prob_dist)
+
+        # print(circle_pool)
+
+        len_children = (len(parent1.circle_list) + len(parent2.circle_list)) // 2
+
+        parent1_sorted_circles = get_highest_area(region, parent1.circle_list)
+        parent2_sorted_circles = get_highest_area(region, parent2.circle_list)
+
+        parent1_sorted_circles[:len_children]
+        parent2_sorted_circles[:len_children]
+
+        parent1_circle_half_1 = list(parent1_sorted_circles[0::2])
+        parent1_circle_half_2 = list(parent1_sorted_circles[1::2])
+        parent2_circle_half_1 = list(parent2_sorted_circles[0::2])
+        parent2_circle_half_2 = list(parent2_sorted_circles[1::2])
+
+
+        # parent1_circle_half_1 = [
+        #     circle for circle in parent1.circle_list[:len(parent1.circle_list)//2]]
+        # parent1_circle_half_2 = [
+        #     circle for circle in parent1.circle_list[len(parent1.circle_list)//2:]]
+        # parent2_circle_half_1 = [
+        #     circle for circle in parent2.circle_list[:len(parent2.circle_list)//2]]
+        # parent2_circle_half_2 = [
+        #     circle for circle in parent2.circle_list[len(parent2.circle_list)//2:]]
+
+        child1 = Agent(radius=parent1.radius, bounding_box=parent1.bounding_box, adam=False)
+        child2 = Agent(radius=parent1.radius, bounding_box=parent1.bounding_box, adam=False)
         child1.circle_list = parent1_circle_half_1 + parent2_circle_half_2
         child2.circle_list = parent2_circle_half_1 + parent1_circle_half_2
         child1.update_agent()
         child2.update_agent()
-        
-        remove_irrelevent_circles(child1, region)
-        remove_irrelevent_circles(child2, region)
 
         offspring.append(child1)
         offspring.append(child2)
@@ -174,31 +232,32 @@ def crossover(agent_list, region):
 
     return agent_list
 
+
 def mutation(agent_list):
 
     for agent in agent_list:
 
         for i, param in enumerate(agent.circle_list):
-                
+
             if random.uniform(0, 1) <= .3:
 
-                agent.circle_list.pop(i)
-                add_or_sub = random.choice((0,1))
+                add_or_sub = random.choice((0, 1))
                 if add_or_sub == 0:
-                    agent.length += 1
+                    agent.circle_list.pop(random.randint(0, agent.length-1))
+                    agent.update_agent()
                 elif add_or_sub == 1:
-                    agent.length -= 1
+                    agent.circle_list.append(get_circle(agent.radius, (random.uniform(bounding_box["bottom left"][0], bounding_box["bottom right"][0]), random.uniform(bounding_box["bottom left"][1], bounding_box["top left"][1]))))
+                    agent.update_agent()
 
-            if random.uniform(0, 1) <= .4:
-
-                agent.circle_list[i - 1].move_circle(random.uniform(-.1, .1), random.uniform(-.1, .1))
+            #Maybe add a move circle feature here
 
     return agent_list
 
-def ga(region, soft_bounding_box, hard_bounding_box):
+
+def ga(region, bounding_box):
 
     print("Initializing Agents...")
-    agent_list = init_agents(.1, soft_bounding_box)
+    agent_list = init_agents(.1, bounding_box)
     print("Agents initialized.")
 
     for generation in range(generations):
@@ -206,16 +265,18 @@ def ga(region, soft_bounding_box, hard_bounding_box):
         print("\ngeneration number: {}".format(generation))
 
         print("Determining how much they lift..")
-        agent_list = fitness(agent_list, region, soft_bounding_box)
+        agent_list = fitness(agent_list, region, bounding_box)
         print("Sucessful")
         print()
         print("Executing stragllers")
         agent_list = selection(agent_list)
         print("Darwin has spoken, {} candidates remain".format(len(agent_list)))
         agent_list.sort(key=lambda x: x.fitness, reverse=True)
-        agent_list[0].plot_agent()
-        plt.xlim([hard_bounding_box[0][0], hard_bounding_box[1][0]])
-        plt.ylim([hard_bounding_box[0][1], hard_bounding_box[1][1]])
+        plt.figure(figsize=(6,6))
+        agent_list[0].plot_agent(
+            region, colors[1], colors[2], colors[3], bounding_box, zorder=2)
+        plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
+        plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
         plt.plot(*region.exterior.xy)
         plt.savefig("frames/generation_{0:03d}".format(generation))
         print("frame saved in frames folder")
@@ -229,23 +290,25 @@ def ga(region, soft_bounding_box, hard_bounding_box):
         agent_list = mutation(agent_list)
         print("Completed.")
 
-        
-        
-
-
 
 global population
-population = 100
+population = 200
 
-global generations 
-generations = 20
+global generations
+generations = 100
 
-soft_bounding_box = [(-1,-1), (1,1)]
-hard_bounding_box = [(-2, -2), (2, 2)]
+global colors
+colors = ["#ade6e6", "#ade6ad", "#e6ade6", "#e6adad"]
 
-test_polygon = geometry.Polygon([(-.5,-.5), (.5,-.5), (.5,.5), (-.5,.5)])
+bounding_box = {"bottom left": (-2, -2),
+                "bottom right": (2, -2),
+                "top right": (2, 2),
+                "top left": (-2, 2)}
 
-#Clearing folder before we add new frames
+
+test_polygon = geometry.Polygon([(-.5, -.5), (.5, -.5), (.5, .5), (-.5, .5)])
+
+# Clearing folder before we add new frames
 folder = '/home/n/Documents/Research/GW-Localization-Tiling/frames'
 for filename in os.listdir(folder):
     file_path = os.path.join(folder, filename)
@@ -257,4 +320,4 @@ for filename in os.listdir(folder):
     except Exception as e:
         print('Failed to delete %s. Reason: %s' % (file_path, e))
 
-ga(test_polygon, soft_bounding_box, hard_bounding_box)
+ga(test_polygon, bounding_box)
