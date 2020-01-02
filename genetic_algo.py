@@ -9,6 +9,7 @@ from rtree import index
 import random
 import matplotlib.pyplot as plt
 from scipy.stats import expon
+from misc_functions import *
 
 
 def get_circle(radius, center, step=100):
@@ -391,41 +392,85 @@ def repair_agent(agent, region):
     center_pt = region.centroid
 
     #Assigns dotted region, if a circle does not already contain the centroid then it will create a small circle around the centroid
-    dot_region = get_circle(.01, center_pt.xy)
+    dot_region = get_circle(.05, center_pt.xy)
+    translated_circles = [] 
     for circle in agent.circle_list:
         if circle.contains(center_pt):
             dot_region = circle
+            translated_circles.append(circle) #Even though it's not technically a translated circled for this purpose its important to add it since later we don't want to double translate it
 
+    count = 0
     while not dot_region.contains(region):
+        print(count, '---------------------------------')
         closest_pts = ops.nearest_points(dot_region.exterior, center_pt)
+        closest_pt = closest_pts[0]
 
-        line_segment = get_extrapolated_line(center_pt, closest_pts[0]) #Creates extrapolated line between closest poitns 
+        print(closest_pt)
 
-        intersected_circles = []
-        if cascaded_union(agent.circle_list).intersects(line_segment): #First checks if the extrapolated line even intersects our circles
+        line_segment = get_extrapolated_line(center_pt, closest_pt) #Creates extrapolated line between closest poitns 
 
-            for circle in agent.circle_list:
-                if circle.intersects(line_segment):
-                    intersected_circles.append(circle)
 
-        if intersected_circles != []:
-            skewered_circle = min(intersected_circles, key=center_pt.distance) #Finds the correct skewered circle the closer one
+        non_translated_circles = diff(agent.circle_list, translated_circles)
+        if cascaded_union(non_translated_circles).intersects(line_segment): #First checks if the extrapolated line even intersects our circles
 
-            #Calculate how much to translate the circle by
-            circle_intersection = skewered_circle.intersection(line_segment)
-            print(circle_intersection)
-            #delta_x = 
-            #affinity.translate(skewered_circle, )
+            intersected_circles = [circle for circle in non_translated_circles if circle.intersects(line_segment)]
+            # for circle in agent.circle_list:
+            #     if circle.intersects(line_segment):
+            #         intersected_circles.append(circle)
+
         
 
+            skewered_circle = min(intersected_circles, key=center_pt.distance) #Finds the correct skewered circle the closer one
+
+            #Calculate where the line intersects the circle
+            lring = geometry.polygon.LinearRing(list(skewered_circle.exterior.coords)) #Translate to line ring
+            points_of_intersection = lring.intersection(line_segment)
+
+            #In case the points of intersection is just a point and not a multipoint
+            try: 
+                closest_intersection =  min(points_of_intersection, key=center_pt.distance)
+            except TypeError:
+                closest_intersection = points_of_intersection
+
+            #Calculate how much to translate the circle by
+            delta_x = closest_pt.x - closest_intersection.x
+            delta_y = closest_pt.y - closest_intersection.y
+            translated_circle = affinity.translate(skewered_circle, xoff=delta_x, yoff=delta_y)
 
 
-        return skewered_circle, intersected_circles, line_segment
+            #Moves circle
+            agent.circle_list.remove(skewered_circle)
+            agent.circle_list.append(translated_circle)
+            
+            translated_circles.append(translated_circle)
+
+            #Increases size of dotted region
+            dot_region = cascaded_union([dot_region, translated_circle])
+
+
+            #Plotting
+            plt.figure(figsize=(6,6))
+            plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
+            plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
+            agent.plot_agent(test_polygon, colors[1], colors[2], colors[3], bounding_box)
+            plt.plot(*skewered_circle.exterior.xy)
+            plt.plot(*region.exterior.xy)
+            plt.plot(*line_segment.xy)
+            plt.plot(*dot_region.exterior.xy, c='k', linestyle='--')
+            plt.savefig("repair_frames/frame_{0:03d}".format(count))
+            plt.close()
+
+            count += 1
+
+        else:
+            break
+    
+    return dot_region, line_segment
 
     
 
-agent = Agent(radius=.2, bounding_box=bounding_box, length=50)
-tmp3, tmp, tmp2 = repair_agent(agent, test_polygon)
+agent = Agent(radius=.2, bounding_box=bounding_box, length=100)
+tmp1, tmp2 = repair_agent(agent, test_polygon)
 
 #Plotting
 plt.figure(figsize=(6,6))
@@ -434,5 +479,5 @@ plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
 agent.plot_agent(test_polygon, colors[1], colors[2], colors[3], bounding_box)
 plt.plot(*test_polygon.exterior.xy)
 plt.plot(*tmp2.xy)
-plt.plot(*tmp3.exterior.xy)
+plt.plot(*tmp1.exterior.xy, c='k')
 plt.show()
