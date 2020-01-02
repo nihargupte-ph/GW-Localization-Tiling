@@ -1,46 +1,37 @@
 import torch
 from torch import nn
-import matplotlib.pyplot as plt
+from discretizing import *
 
-# Custom imports
-from Color_Mapping import *
+fig, ax = plt.subplots(figsize=(6,6))
+ax.set_xlim([box["bottom left"][0], box["bottom right"][0]])
+ax.set_ylim([box["bottom left"][1], box["top left"][1]])
 
+# for pixel in pixeled_list:
+#     x,y = pixel.exterior.xy
+#     ax.plot(x,y,c='k', alpha=.8)
 
-def dicretize_plane(box, num_points_sqrt):
-    """ returns tuple of indexable points given the box (dictionary) and the square_root of the number of points"""
+# plt.show()
 
-    X = np.linspace(box["bottom left"][0],
-                    box["bottom right"][0], num_points_sqrt)
-    Y = np.linspace(box["bottom left"][1], box["top left"][1], num_points_sqrt)
-
-    indexable_points = tuple([(x, y) for x in X for y in Y])
-
-    return indexable_points
-
-#Setting up discritization
-box = {"bottom left": (-2, -2),
-       "bottom right": (2, -2),
-       "top right": (2, 2),
-       "top left": (-2, 2)}
-
-num_points_sqrt = 200
-num_points = num_points_sqrt ** 2
-
-
-#Input could be where the points intersect. So total inputs would be discretized 
+#NN part
 class Network(nn.Module):
-    def __init__(self):
+    def __init__(self, num_pixels, num_points):
         super().__init__()
         
         # Inputs to hidden layer linear transformation
-        self.hidden = nn.Linear(784, 256)
+        num_hidden_neurons = (int((2/3) * num_pixels)) + num_points
+        self.hidden = nn.Linear(num_pixels, num_hidden_neurons)
         # Output layer, 10 units - one for each digit
-        self.output = nn.Linear(256, 10)
+        self.output = nn.Linear(num_hidden_neurons, num_points)
         
         # Define sigmoid activation and softmax output 
         self.sigmoid = nn.Sigmoid()
         self.softmax = nn.Softmax(dim=1)
         
+    @staticmethod
+    def vectorize(output):
+        """ Vectorize our ouput into a single node """
+
+
     def forward(self, x):
         # Pass the input tensor through each of our operations
         x = self.hidden(x)
@@ -49,3 +40,5 @@ class Network(nn.Module):
         x = self.softmax(x)
         
         return x
+
+model = Network(num_pixels, num_points)

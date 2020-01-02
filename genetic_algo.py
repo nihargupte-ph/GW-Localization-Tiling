@@ -2,6 +2,7 @@ import numpy as np
 import os
 import shutil
 from shapely import geometry
+from shapely import affinity
 from shapely import ops
 from shapely.ops import cascaded_union
 from rtree import index
@@ -37,6 +38,15 @@ class Agent:
     def update_agent(self):
         self.length = len(self.circle_list)
 
+    def remove_irrelavent_circles(self, region, threshold):
+        """ Removes all circles in circle_list that intrsect the region less than threshold """
+
+        tmp_lst = []
+        for circle in self.circle_list:
+            if circle.intersection(region).area > threshold:
+                tmp_lst.append(circle)
+        self.circle_list = tmp_lst
+
     def get_intersections(self, region, bounding_box):
         """ Returns all types of intersections. self_intersection, self_intersection_fraction, region_intersection, region_nonintersection, region_intersection_fraction """
 
@@ -57,7 +67,17 @@ class Agent:
         self_intersection, _, region_intersection, region_nonintersection, _, _ = self.get_intersections(
             region, bounding_box)
 
-        for p1 in self_intersection:
+        
+        try: 
+            for p1 in self_intersection:
+                x1, y1 = p1.exterior.xy
+
+                if ax == None:
+                    plt.fill(x1, y1, c=color1, zorder=zorder+.1)
+                else:
+                    ax.fill(x1, y1, c=color1, zorder=zorder+.1)
+        except:
+            p1 = self_intersection
             x1, y1 = p1.exterior.xy
 
             if ax == None:
@@ -65,7 +85,17 @@ class Agent:
             else:
                 ax.fill(x1, y1, c=color1, zorder=zorder+.1)
 
-        for p2 in region_intersection:
+
+        try: 
+            for p2 in region_intersection:
+                x2, y2 = p2.exterior.xy
+
+                if ax == None:
+                    plt.fill(x2, y2, c=color2, zorder=zorder)
+                else:
+                    ax.fill(x2, y2, c=color2, zorder=zorder)
+        except:
+            p2 = region_intersection
             x2, y2 = p2.exterior.xy
 
             if ax == None:
@@ -73,7 +103,16 @@ class Agent:
             else:
                 ax.fill(x2, y2, c=color2, zorder=zorder)
 
-        for p3 in region_nonintersection:
+        try: 
+            for p3 in region_nonintersection:
+                x3, y3 = p3.exterior.xy
+
+                if ax == None:
+                    plt.fill(x3, y3, c=color3, zorder=zorder)
+                else:
+                    ax.fill(x3, y3, c=color3, zorder=zorder)
+        except:
+            p3 = region_nonintersection
             x3, y3 = p3.exterior.xy
 
             if ax == None:
@@ -82,6 +121,18 @@ class Agent:
                 ax.fill(x3, y3, c=color3, zorder=zorder)
 
         plt.legend(["Fitness: {}".format(self.fitness), "Number circles: {}".format(self.length)], loc='upper left')
+
+    def move_circle(self, old_circle, center): 
+        """ Moves circle from circle_list to new center """
+ 
+        try:
+            self.circle_list.remove(old_circle)
+        except:
+            raise IndexError("The circle entered was not found in this agent")
+
+        new_circle = get_circle(self.radius, center)
+
+        self.circle_list.append(new_circle)
 
 
 def double_intersection(polygon_list):
@@ -136,9 +187,9 @@ def init_agents(radius, bounding_box, length=50):
 
 def fitness(agent_list, region, bounding_box):
 
-    alpha = 100
-    beta = 20
-    chi = 5
+    alpha = 10
+    beta = 1
+    chi = 1
 
     for agent in agent_list:
 
@@ -222,6 +273,10 @@ def crossover(agent_list, region):
         child2 = Agent(radius=parent1.radius, bounding_box=parent1.bounding_box, adam=False)
         child1.circle_list = parent1_circle_half_1 + parent2_circle_half_2
         child2.circle_list = parent2_circle_half_1 + parent1_circle_half_2
+
+        child1.remove_irrelavent_circles(region, 1e-5)
+        child2.remove_irrelavent_circles(region, 1e-5)
+
         child1.update_agent()
         child2.update_agent()
 
@@ -292,7 +347,7 @@ def ga(region, bounding_box):
 
 
 global population
-population = 200
+population = 100
 
 global generations
 generations = 100
@@ -320,4 +375,64 @@ for filename in os.listdir(folder):
     except Exception as e:
         print('Failed to delete %s. Reason: %s' % (file_path, e))
 
-ga(test_polygon, bounding_box)
+#ga(test_polygon, bounding_box)
+
+#Testing code region
+def get_extrapolated_line(p1,p2):
+    'Creates a line extrapoled in p1->p2 direction https://stackoverflow.com/questions/33159833/shapely-extending-line-feature'
+    EXTRAPOL_RATIO = 1000
+    a = p1
+    b = (p1.x+EXTRAPOL_RATIO*(p2.x-p1.x), p1.y+EXTRAPOL_RATIO*(p2.y-p1.y) )
+    return geometry.LineString([a,b])
+
+def repair_agent(agent, region):
+    """ repairs agent to possibly cover the region, if the region is not covered it will return false if it is it will return true """
+
+    center_pt = region.centroid
+
+    #Assigns dotted region, if a circle does not already contain the centroid then it will create a small circle around the centroid
+    dot_region = get_circle(.01, center_pt.xy)
+    for circle in agent.circle_list:
+        if circle.contains(center_pt):
+            dot_region = circle
+
+    while not dot_region.contains(region):
+        closest_pts = ops.nearest_points(dot_region.exterior, center_pt)
+
+        line_segment = get_extrapolated_line(center_pt, closest_pts[0]) #Creates extrapolated line between closest poitns 
+
+        intersected_circles = []
+        if cascaded_union(agent.circle_list).intersects(line_segment): #First checks if the extrapolated line even intersects our circles
+
+            for circle in agent.circle_list:
+                if circle.intersects(line_segment):
+                    intersected_circles.append(circle)
+
+        if intersected_circles != []:
+            skewered_circle = min(intersected_circles, key=center_pt.distance) #Finds the correct skewered circle the closer one
+
+            #Calculate how much to translate the circle by
+            circle_intersection = skewered_circle.intersection(line_segment)
+            print(circle_intersection)
+            #delta_x = 
+            #affinity.translate(skewered_circle, )
+        
+
+
+
+        return skewered_circle, intersected_circles, line_segment
+
+    
+
+agent = Agent(radius=.2, bounding_box=bounding_box, length=50)
+tmp3, tmp, tmp2 = repair_agent(agent, test_polygon)
+
+#Plotting
+plt.figure(figsize=(6,6))
+plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
+plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
+agent.plot_agent(test_polygon, colors[1], colors[2], colors[3], bounding_box)
+plt.plot(*test_polygon.exterior.xy)
+plt.plot(*tmp2.xy)
+plt.plot(*tmp3.exterior.xy)
+plt.show()
