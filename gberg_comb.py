@@ -6,10 +6,12 @@ Created on Sat Jun  1 11:42:44 2019
 @author: Neil
 """
 
+#Imports
 import healpy as hp
 from ligo.skymap.io import fits 
 import numpy as np
 import time
+%matplotlib
 
 
 ############################################################################
@@ -18,8 +20,6 @@ def draw_circles(nside,vec_arr,rad,eps=0.8):
     Takes input array of vectors, output pixels at edges of pointings
     eps should be <1, around 0.8 good for full skymaps
     """
-
-    
         
     cov_pix = set()
     for n in range(len(vec_arr)): 

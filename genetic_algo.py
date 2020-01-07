@@ -10,6 +10,9 @@ import random
 import matplotlib.pyplot as plt
 from scipy.stats import expon
 from misc_functions import *
+import fiona
+
+random.seed(2)
 
 
 def get_circle(radius, center, step=100):
@@ -53,6 +56,7 @@ class Agent:
 
         self_intersection, self_intersection_fraction = double_intersection(
             self.circle_list)
+
         region_intersection, region_nonintersection, region_intersection_fraction, region_nonintersection_fraction = intersection_region(
             region, self.circle_list, bounding_box)
 
@@ -68,7 +72,6 @@ class Agent:
         self_intersection, _, region_intersection, region_nonintersection, _, _ = self.get_intersections(
             region, bounding_box)
 
-        
         try: 
             for p1 in self_intersection:
                 x1, y1 = p1.exterior.xy
@@ -77,7 +80,8 @@ class Agent:
                     plt.fill(x1, y1, c=color1, zorder=zorder+.1)
                 else:
                     ax.fill(x1, y1, c=color1, zorder=zorder+.1)
-        except:
+
+        except TypeError:
             p1 = self_intersection
             x1, y1 = p1.exterior.xy
 
@@ -85,24 +89,6 @@ class Agent:
                 plt.fill(x1, y1, c=color1, zorder=zorder+.1)
             else:
                 ax.fill(x1, y1, c=color1, zorder=zorder+.1)
-
-
-        try: 
-            for p2 in region_intersection:
-                x2, y2 = p2.exterior.xy
-
-                if ax == None:
-                    plt.fill(x2, y2, c=color2, zorder=zorder)
-                else:
-                    ax.fill(x2, y2, c=color2, zorder=zorder)
-        except:
-            p2 = region_intersection
-            x2, y2 = p2.exterior.xy
-
-            if ax == None:
-                plt.fill(x2, y2, c=color2, zorder=zorder)
-            else:
-                ax.fill(x2, y2, c=color2, zorder=zorder)
 
         try: 
             for p3 in region_nonintersection:
@@ -112,7 +98,7 @@ class Agent:
                     plt.fill(x3, y3, c=color3, zorder=zorder)
                 else:
                     ax.fill(x3, y3, c=color3, zorder=zorder)
-        except:
+        except TypeError:
             p3 = region_nonintersection
             x3, y3 = p3.exterior.xy
 
@@ -120,6 +106,23 @@ class Agent:
                 plt.fill(x3, y3, c=color3, zorder=zorder)
             else:
                 ax.fill(x3, y3, c=color3, zorder=zorder)
+
+        try: 
+            for p2 in region_intersection:
+                x2, y2 = p2.exterior.xy
+
+                if ax == None:
+                    plt.fill(x2, y2, c=color2, zorder=zorder)
+                else:
+                    ax.fill(x2, y2, c=color2, zorder=zorder)
+        except TypeError:
+            p2 = region_intersection
+            x2, y2 = p2.exterior.xy
+
+            if ax == None:
+                plt.fill(x2, y2, c=color2, zorder=zorder)
+            else:
+                ax.fill(x2, y2, c=color2, zorder=zorder)
 
         plt.legend(["Fitness: {}".format(self.fitness), "Number circles: {}".format(self.length)], loc='upper left')
 
@@ -149,7 +152,13 @@ def double_intersection(polygon_list):
 
     for poly in polygon_list:
         merged_circles = cascaded_union([polygon_list[pos] for pos in idx.intersection(poly.bounds) if polygon_list[pos] != poly])
-        intersections.append(poly.intersection(merged_circles))
+        intersec = poly.intersection(merged_circles)
+
+        if isinstance(intersec, geometry.GeometryCollection): #For some reason linestrings are getting appended so i'm removing them
+            new_intersec = geometry.GeometryCollection([shape for shape in intersec if not isinstance(shape, geometry.LineString)])
+            intersections.append(new_intersec)
+        else:
+            intersections.append(intersec)
 
     intersection = cascaded_union(intersections)
     intersection_area = intersection.area
@@ -170,7 +179,6 @@ def intersection_region(region, polygon_list, bounding_box):
     return intersection, nonoverlap, fraction_overlap, fraction_nonoverlap
 
 
-
 def get_highest_area(region, circle_list):
     """ From a circle collection returns an ordered list of circles ordered by how much they intersect with the region """
 
@@ -178,6 +186,120 @@ def get_highest_area(region, circle_list):
     _, ret_list = zip(*sorted(temp_list,key=lambda x: region.intersection(x[1]).area))
 
     return ret_list
+
+
+def repair_agent_skewer(agent, region, plot=False):
+    """ repairs agent to possibly cover the region, if the region is not covered it will return false if it is it will return true """
+
+    center_pt = region.centroid
+
+    #Assigns dotted region, if a circle does not already contain the centroid then it will create a small circle around the centroid
+    dot_region = get_circle(.01, center_pt.xy)
+    translated_circles = [] 
+    for circle in agent.circle_list:
+        if circle.contains(center_pt):
+            dot_region = circle
+            translated_circles.append(circle) #Even though it's not technically a translated circled for this purpose its important to add it since later we don't want to double translate it
+
+    count = 0
+    new_dot_region = geometry.Polygon([(-.1, -.2), (.2, -.2), (.2, .2), (-.2, .2)]) #NOTE THIS SHOULDN"T BE HERE ITS A TEMPORARY FIX
+    while not new_dot_region.contains(region):
+
+        # # Define a polygon feature geometry with one attribute
+        # schema = {
+        #     'geometry': 'Polygon',
+        #     'properties': {'id': 'int'},
+        # }
+
+        # # Write a new Shapefile
+        # with fiona.open('shape_files/{}.shp'.format(count), 'w', 'ESRI Shapefile', schema) as c:
+        #     ## If there are multiple geometries, put the "for" loop here
+        #     c.write({
+        #         'geometry': geometry.mapping(dot_region),
+        #         'properties': {'id': 123},
+        #     })
+
+        print(count, '---------------------------------', dot_region.contains(region))
+
+        # closest_pts = ops.nearest_points(dot_region.exterior, center_pt)
+        # closest_pt_1 = closest_pts[0]
+        ordered_pts = get_ordered_list(dot_region.exterior, center_pt)
+
+        for closest_pt in ordered_pts: #Iterates through all the closest points till it intersects a circle
+
+            line_segment = get_extrapolated_line(center_pt, closest_pt) #Creates extrapolated line between closest poitns 
+
+            non_translated_circles = diff(agent.circle_list, translated_circles)
+            if cascaded_union(non_translated_circles).intersects(line_segment): #First checks if the extrapolated line even intersects our circles
+
+                intersected_circles = [circle for circle in non_translated_circles if circle.intersects(line_segment)]
+                # for circle in agent.circle_list:
+                #     if circle.intersects(line_segment):
+                #         intersected_circles.append(circle)
+            
+                skewered_circle = min(intersected_circles, key=center_pt.distance) #Finds the correct skewered circle the closer one
+
+                #Calculate where the line intersects the circle
+                lring = geometry.polygon.LinearRing(list(skewered_circle.exterior.coords)) #Translate to line ring
+                points_of_intersection = lring.intersection(line_segment)
+
+                #In case the points of intersection is just a point and not a multipoint
+                try: 
+                    closest_intersection =  min(points_of_intersection, key=center_pt.distance)
+                except TypeError:
+                    closest_intersection = points_of_intersection
+
+                #Calculate how much to translate the circle by
+                delta_x = closest_pt.x - closest_intersection.x
+                delta_y = closest_pt.y - closest_intersection.y
+                translated_circle = affinity.translate(skewered_circle, xoff=delta_x, yoff=delta_y)
+
+
+                #Moves circle
+                agent.circle_list.remove(skewered_circle)
+                agent.circle_list.append(translated_circle)
+                
+                translated_circles.append(translated_circle)
+
+                #Increases size of dotted region
+                dot_region = cascaded_union([dot_region, translated_circle])
+
+                #Resets center point if there's only one translated circle
+                #center_pt = dot_region.centroid
+
+                #Plotting
+                if plot == True:
+                    plt.figure(figsize=(6,6))
+                    plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
+                    plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
+                    agent.plot_agent(test_polygon, colors[1], colors[2], colors[3], bounding_box)
+                    for i, _ in enumerate(dot_region.interiors):
+                        plt.plot(*dot_region.interiors[i].coords.xy, c='w')
+                    plt.plot(*skewered_circle.exterior.xy)
+                    plt.plot(*region.exterior.xy)
+                    plt.plot(*line_segment.xy)
+                    plt.plot(*dot_region.exterior.xy, c='k', linestyle='--')
+                    plt.savefig("repair_frames/frame_{0:03d}".format(count))
+                    plt.close()
+
+                count += 1
+
+                break
+        
+        x,y = dot_region.exterior.xy #NOTE THIS SHOULDN"T BE HERE ITS A TEMPORARY FIX
+        x,y = list(x), list(y)
+        lst = list(zip(x,y))
+        new_dot_region = geometry.Polygon(lst)
+
+        if closest_pt.xy == ordered_pts[-1].xy:
+            return False
+            
+    agent.remove_irrelavent_circles(region, .01)
+    agent.update_agent()
+
+    return True
+
+
 # GA part
 
 
@@ -362,7 +484,7 @@ bounding_box = {"bottom left": (-2, -2),
                 "top left": (-2, 2)}
 
 
-test_polygon = geometry.Polygon([(-.5, -.5), (.5, -.5), (.5, .5), (-.5, .5)])
+test_polygon = geometry.Polygon([(-.2, -.2), (.2, -.2), (.2, .2), (-.2, .2)])
 
 # Clearing folder before we add new frames
 folder = '/home/n/Documents/Research/GW-Localization-Tiling/frames'
@@ -402,7 +524,16 @@ def repair_agent_center_sonar(agent, region):
 
     #Assigns dotted region, if a circle does not already contain the centroid then it will create a small circle around the centroid
     dot_region = get_circle(.01, center_pt.xy)
-    x,y = get_circle(1, center_pt.xy, step=200).exterior.coords.xy
+
+    translated_circles = [] 
+    for circle in agent.circle_list:
+        if circle.contains(center_pt):
+            dot_region = circle
+            center_pt = dot_region.centroid
+            translated_circles.append(circle) #Even though it's not technically a translated circled for this purpose its important to add it since later we don't want to double translate it
+            break
+
+    x,y = dot_region.exterior.coords.xy
     x,y = list(x), list(y)
     sweeping_pts = [geometry.Point(i,j) for i,j in zip(x,y)]
     translated_circles = [] 
@@ -435,30 +566,33 @@ def repair_agent_center_sonar(agent, region):
 
                 skewered_circle = min(intersected_circles, key=center_pt.distance) #Finds the correct skewered circle the closer one
 
-                #Calculate where the line intersects the circle
-                lring = geometry.polygon.LinearRing(list(skewered_circle.exterior.coords)) #Translate to line ring
-                points_of_intersection = lring.intersection(line_segment)
+                if skewered_circle.intersects(dot_region):
+                    dot_region = cascaded_union([dot_region, skewered_circle])
+                else:
+                    #Calculate where the line intersects the circle
+                    lring = geometry.polygon.LinearRing(list(skewered_circle.exterior.coords)) #Translate to line ring
+                    points_of_intersection = lring.intersection(line_segment)
 
-                #In case the points of intersection is just a point and not a multipoint
-                try: 
-                    closest_intersection =  min(points_of_intersection, key=center_pt.distance)
-                except TypeError:
-                    closest_intersection = points_of_intersection
+                    #In case the points of intersection is just a point and not a multipoint
+                    try: 
+                        closest_intersection =  min(points_of_intersection, key=center_pt.distance)
+                    except TypeError:
+                        closest_intersection = points_of_intersection
 
-                #Calculate how much to translate the circle by
-                delta_x = closest_pt.x - closest_intersection.x
-                delta_y = closest_pt.y - closest_intersection.y
-                translated_circle = affinity.translate(skewered_circle, xoff=delta_x, yoff=delta_y)
+                    #Calculate how much to translate the circle by
+                    delta_x = closest_pt.x - closest_intersection.x
+                    delta_y = closest_pt.y - closest_intersection.y
+                    translated_circle = affinity.translate(skewered_circle, xoff=delta_x, yoff=delta_y)
 
 
-                #Moves circle
-                agent.circle_list.remove(skewered_circle)
-                agent.circle_list.append(translated_circle)
-                
-                translated_circles.append(translated_circle)
+                    #Moves circle
+                    agent.circle_list.remove(skewered_circle)
+                    agent.circle_list.append(translated_circle)
+                    
+                    translated_circles.append(translated_circle)
 
-                #Increases size of dotted region
-                dot_region = cascaded_union([dot_region, translated_circle])
+                    #Increases size of dotted region
+                    dot_region = cascaded_union([dot_region, translated_circle])
 
 
                 #Plotting
@@ -469,6 +603,7 @@ def repair_agent_center_sonar(agent, region):
                 plt.plot(*skewered_circle.exterior.xy)
                 plt.plot(*region.exterior.xy)
                 plt.plot(*line_segment.xy)
+                plt.scatter(*closest_pt.xy, zorder=5, color='c')
                 plt.plot(*dot_region.exterior.xy, c='k', linestyle='--')
                 plt.savefig("repair_frames/frame_{0:03d}".format(count))
                 plt.close()
@@ -476,96 +611,6 @@ def repair_agent_center_sonar(agent, region):
                 count += 1                
     
 
-
-
-def repair_agent_skewer(agent, region):
-    """ repairs agent to possibly cover the region, if the region is not covered it will return false if it is it will return true """
-
-    center_pt = region.centroid
-
-    #Assigns dotted region, if a circle does not already contain the centroid then it will create a small circle around the centroid
-    dot_region = get_circle(.01, center_pt.xy)
-    translated_circles = [] 
-    for circle in agent.circle_list:
-        if circle.contains(center_pt):
-            dot_region = circle
-            translated_circles.append(circle) #Even though it's not technically a translated circled for this purpose its important to add it since later we don't want to double translate it
-
-    count = 0
-    while not dot_region.contains(region):
-        print(count, '---------------------------------', dot_region.contains(region), dot_region.contains(center_pt))
-        # closest_pts = ops.nearest_points(dot_region.exterior, center_pt)
-        # closest_pt_1 = closest_pts[0]
-        ordered_pts = get_ordered_list(dot_region.exterior, center_pt)
-
-        for closest_pt in ordered_pts: #Iterates through all the closest points till it intersects a circle
-
-            line_segment = get_extrapolated_line(center_pt, closest_pt) #Creates extrapolated line between closest poitns 
-
-
-            non_translated_circles = diff(agent.circle_list, translated_circles)
-            if cascaded_union(non_translated_circles).intersects(line_segment): #First checks if the extrapolated line even intersects our circles
-
-                intersected_circles = [circle for circle in non_translated_circles if circle.intersects(line_segment)]
-                # for circle in agent.circle_list:
-                #     if circle.intersects(line_segment):
-                #         intersected_circles.append(circle)
-
-            
-
-                skewered_circle = min(intersected_circles, key=center_pt.distance) #Finds the correct skewered circle the closer one
-
-                #Calculate where the line intersects the circle
-                lring = geometry.polygon.LinearRing(list(skewered_circle.exterior.coords)) #Translate to line ring
-                points_of_intersection = lring.intersection(line_segment)
-
-                #In case the points of intersection is just a point and not a multipoint
-                try: 
-                    closest_intersection =  min(points_of_intersection, key=center_pt.distance)
-                except TypeError:
-                    closest_intersection = points_of_intersection
-
-                #Calculate how much to translate the circle by
-                delta_x = closest_pt.x - closest_intersection.x
-                delta_y = closest_pt.y - closest_intersection.y
-                translated_circle = affinity.translate(skewered_circle, xoff=delta_x, yoff=delta_y)
-
-
-                #Moves circle
-                agent.circle_list.remove(skewered_circle)
-                agent.circle_list.append(translated_circle)
-                
-                translated_circles.append(translated_circle)
-
-                #Increases size of dotted region
-                dot_region = cascaded_union([dot_region, translated_circle])
-
-
-                #Plotting
-                plt.figure(figsize=(6,6))
-                plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
-                plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
-                try:
-                    agent.plot_agent(test_polygon, colors[1], colors[2], colors[3], bounding_box)
-                except:
-                    pass
-                plt.plot(*skewered_circle.exterior.xy)
-                plt.plot(*region.exterior.xy)
-                plt.plot(*line_segment.xy)
-                plt.plot(*dot_region.exterior.xy, c='k', linestyle='--')
-                plt.savefig("repair_frames/frame_{0:03d}".format(count))
-                plt.close()
-
-                count += 1
-                break
-        
-        if closest_pt.xy == ordered_pts[-1].xy:
-            return False
-            
-    
-    return True
-
-    
-
-agent = Agent(radius=.2, bounding_box=bounding_box, length=120)
-tmp = repair_agent_center_sonar(agent, test_polygon)
+# agent = Agent(radius=.2, bounding_box=bounding_box, length=100)
+# tmp = repair_agent_skewer(agent, test_polygon, plot=True)
+# agent.plot_agent(test_polygon, colors[1], colors[2], colors[3], bounding_box)
