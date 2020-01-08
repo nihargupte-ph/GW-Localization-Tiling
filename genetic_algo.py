@@ -11,8 +11,7 @@ import matplotlib.pyplot as plt
 from scipy.stats import expon
 from misc_functions import *
 import fiona
-
-random.seed(2)
+import time
 
 
 def get_circle(radius, center, step=100):
@@ -187,8 +186,23 @@ def get_highest_area(region, circle_list):
 
     return ret_list
 
+def get_extrapolated_line(p1,p2):
+    'Creates a line extrapoled in p1->p2 direction https://stackoverflow.com/questions/33159833/shapely-extending-line-feature'
+    EXTRAPOL_RATIO = 1000
+    a = p1
+    b = (p1.x+EXTRAPOL_RATIO*(p2.x-p1.x), p1.y+EXTRAPOL_RATIO*(p2.y-p1.y) )
+    return geometry.LineString([a,b])
 
-def repair_agent_skewer(agent, region, plot=False):
+def get_ordered_list(linrig, point):
+    """ Given LinearRing and point returns list of points closest to said point from polygon """
+    x,y = linrig.xy
+    x, y = list(x), list(y)
+    point_list = list(zip(x,y))
+    point_list.sort(key = lambda p: np.sqrt((p[0] - point.x)**2 + (p[1] - point.y)**2))
+    point_list = [geometry.Point(p[0], p[1]) for p in point_list]
+    return point_list
+
+def repair_agent_skewer(agent, region, plot=False, save=False):
     """ repairs agent to possibly cover the region, if the region is not covered it will return false if it is it will return true """
 
     center_pt = region.centroid
@@ -205,24 +219,22 @@ def repair_agent_skewer(agent, region, plot=False):
     new_dot_region = geometry.Polygon([(-.1, -.2), (.2, -.2), (.2, .2), (-.2, .2)]) #NOTE THIS SHOULDN"T BE HERE ITS A TEMPORARY FIX
     while not new_dot_region.contains(region):
 
-        # # Define a polygon feature geometry with one attribute
-        # schema = {
-        #     'geometry': 'Polygon',
-        #     'properties': {'id': 'int'},
-        # }
+        if save == True:
+            # Define a polygon feature geometry with one attribute
+            schema = {
+                'geometry': 'Polygon',
+                'properties': {'id': 'int'},
+            }
 
-        # # Write a new Shapefile
-        # with fiona.open('shape_files/{}.shp'.format(count), 'w', 'ESRI Shapefile', schema) as c:
-        #     ## If there are multiple geometries, put the "for" loop here
-        #     c.write({
-        #         'geometry': geometry.mapping(dot_region),
-        #         'properties': {'id': 123},
-        #     })
+            # Write a new Shapefile
+            with fiona.open('shape_files/{}.shp'.format(count), 'w', 'ESRI Shapefile', schema) as c:
+                ## If there are multiple geometries, put the "for" loop here
+                c.write({
+                    'geometry': geometry.mapping(dot_region),
+                    'properties': {'id': 123},
+                })
 
-        print(count, '---------------------------------', dot_region.contains(region))
 
-        # closest_pts = ops.nearest_points(dot_region.exterior, center_pt)
-        # closest_pt_1 = closest_pts[0]
         ordered_pts = get_ordered_list(dot_region.exterior, center_pt)
 
         for closest_pt in ordered_pts: #Iterates through all the closest points till it intersects a circle
@@ -262,7 +274,10 @@ def repair_agent_skewer(agent, region, plot=False):
                 translated_circles.append(translated_circle)
 
                 #Increases size of dotted region
-                dot_region = cascaded_union([dot_region, translated_circle])
+                try: 
+                    dot_region = cascaded_union([dot_region, translated_circle])
+                except ValueError:
+                    break
 
                 #Resets center point if there's only one translated circle
                 #center_pt = dot_region.centroid
@@ -286,7 +301,11 @@ def repair_agent_skewer(agent, region, plot=False):
 
                 break
         
-        x,y = dot_region.exterior.xy #NOTE THIS SHOULDN"T BE HERE ITS A TEMPORARY FIX
+        try: 
+            x,y = dot_region.exterior.xy #NOTE THIS SHOULDN"T BE HERE ITS A TEMPORARY FIX
+        except AttributeError: #If you end up getting a multipolygon
+            return False
+
         x,y = list(x), list(y)
         lst = list(zip(x,y))
         new_dot_region = geometry.Polygon(lst)
@@ -301,11 +320,21 @@ def repair_agent_skewer(agent, region, plot=False):
 
 
 # GA part
+def repair_agents(agent_list, region, plot=False): 
+    """ Given a list of agents returns a list of repaired agents """
 
+    repaired_agent_list = []
+    for i, agent in enumerate(agent_list): 
+        printProgressBar(i, len(agent_list))
+        if repair_agent_skewer(agent, region, plot=plot):
+            repaired_agent_list.append(agent)
 
-def init_agents(radius, bounding_box, length=50):
+    return repaired_agent_list
+
+def init_agents(radius, bounding_box, length=20):
 
     return [Agent(radius=radius, bounding_box=bounding_box, length=length) for _ in range(population)]
+    
 
 
 def fitness(agent_list, region, bounding_box):
@@ -432,45 +461,81 @@ def mutation(agent_list):
     return agent_list
 
 
-def ga(region, bounding_box):
+def ga(region, radius, bounding_box):
 
+
+    start = time.process_time() #Timing entire program
+
+    before = time.process_time()
     print("Initializing Agents...")
-    agent_list = init_agents(.1, bounding_box)
-    print("Agents initialized.")
+    agent_list = init_agents(radius, bounding_box)
+    print("Agents initialized. Run time {}".format(time.process_time() - before))
 
     for generation in range(generations):
 
+        generation_start = time.process_time()
+
         print("\ngeneration number: {}".format(generation))
 
-        print("Determining how much they lift..")
-        agent_list = fitness(agent_list, region, bounding_box)
-        print("Sucessful")
+        before = time.process_time()
+        print("Repairing Agents")
+        agent_list = repair_agents(agent_list, region, plot=True)
+        print("Sucessful. {} Agents remain. Run time {}".format(len(agent_list), time.process_time() - before))
         print()
+
+        before = time.process_time()
+        print("Determining Fitness")
+        agent_list = fitness(agent_list, region, bounding_box)
+        print("Sucessful. Run time {}".format(time.process_time() - before))
+        print()
+
+        before = time.process_time()
         print("Executing stragllers")
         agent_list = selection(agent_list)
-        print("Darwin has spoken, {} candidates remain".format(len(agent_list)))
+        print("Sucessful. Run time {}".format(time.process_time() - before))
+        print()
+
+        before = time.process_time()
         agent_list.sort(key=lambda x: x.fitness, reverse=True)
-        plt.figure(figsize=(6,6))
-        agent_list[0].plot_agent(
-            region, colors[1], colors[2], colors[3], bounding_box, zorder=2)
-        plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
-        plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
-        plt.plot(*region.exterior.xy)
-        plt.savefig("frames/generation_{0:03d}".format(generation))
-        print("frame saved in frames folder")
-        plt.close()
+
+
+        #Creating folder
+        os.mkdir("/home/n/Documents/Research/GW-Localization-Tiling/frames/generation_{0:03d}".format(generation))
+
+        for i, agent in enumerate(agent_list):
+            plt.figure(figsize=(6,6))
+            agent.plot_agent(
+                region, colors[1], colors[2], colors[3], bounding_box, zorder=2)
+            plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
+            plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
+            plt.plot(*region.exterior.xy)
+            plt.savefig("frames/generation_{0:03d}/agent_{0:03d}".format(generation, i))
+            plt.close()
+
+        print("frame saved in frames folder. Run time {}".format(time.process_time() - before))
+
         print()
-        print("Beginning candlelight dinner")
+
+        before = time.process_time()
+        print("Beginning crossover")
         agent_list = crossover(agent_list, region)
-        print("Young love phase is over")
+        print("Sucessful. Run time {}".format(time.process_time() - before))
         print()
-        print("Blasting my guys with Radiation")
+
+        before = time.process_time()
+        print("Mutating random agents")
         agent_list = mutation(agent_list)
-        print("Completed.")
+        print("Sucessful. Run time {}".format(time.process_time() - before))
+        print()
 
+        print()
+        print("Completed. Generational run time {}".format(time.process_time() - generation_start))
+        print()
+        print()
 
+    print("Finished. Total execution time {}".format(time.process_time() - start))
 global population
-population = 100
+population = 2
 
 global generations
 generations = 100
@@ -498,25 +563,9 @@ for filename in os.listdir(folder):
     except Exception as e:
         print('Failed to delete %s. Reason: %s' % (file_path, e))
 
-#ga(test_polygon, bounding_box)
+ga(test_polygon, .2, bounding_box)
 
 #Testing code region
-def get_extrapolated_line(p1,p2):
-    'Creates a line extrapoled in p1->p2 direction https://stackoverflow.com/questions/33159833/shapely-extending-line-feature'
-    EXTRAPOL_RATIO = 1000
-    a = p1
-    b = (p1.x+EXTRAPOL_RATIO*(p2.x-p1.x), p1.y+EXTRAPOL_RATIO*(p2.y-p1.y) )
-    return geometry.LineString([a,b])
-
-def get_ordered_list(linrig, point):
-    """ Given LinearRing and point returns list of points closest to said point from polygon """
-    x,y = linrig.xy
-    x, y = list(x), list(y)
-    point_list = list(zip(x,y))
-    point_list.sort(key = lambda p: np.sqrt((p[0] - point.x)**2 + (p[1] - point.y)**2))
-    point_list = [geometry.Point(p[0], p[1]) for p in point_list]
-    return point_list
-
 def repair_agent_center_sonar(agent, region):
     """ repairs agent to possibly cover the region, if the region is not covered it will return false if it is it will return true """
 
@@ -611,6 +660,6 @@ def repair_agent_center_sonar(agent, region):
                 count += 1                
     
 
-# agent = Agent(radius=.2, bounding_box=bounding_box, length=100)
+# agent = Agent(radius=.2, bounding_box=bounding_box, length=3)
 # tmp = repair_agent_skewer(agent, test_polygon, plot=True)
 # agent.plot_agent(test_polygon, colors[1], colors[2], colors[3], bounding_box)
