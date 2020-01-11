@@ -41,6 +41,7 @@ class Agent:
     def update_agent(self):
         self.length = len(self.circle_list)
 
+
     def remove_irrelavent_circles(self, region, threshold):
         """ Removes all circles in circle_list that intrsect the region less than threshold """
 
@@ -167,7 +168,7 @@ def intersection_region(region, polygon_list, bounding_box):
 
     """ Returns regions of intersection between the polygon_list and the region. Also returns the non intersection between polygon_list and the region. It will also return the fraction which the polygon list has covered """
 
-    bounding_box = geometry.Polygon([bounding_box["bottom left"], bounding_box["bottom right"], bounding_box["top right"], bounding_box["top right"]])
+    bounding_box = geometry.Polygon([bounding_box["bottom left"], bounding_box["bottom right"], bounding_box["top right"], bounding_box["top left"]])
 
     polygon_union = cascaded_union(polygon_list)
     intersection = region.intersection(polygon_union)
@@ -193,19 +194,57 @@ def get_extrapolated_line(p1,p2):
     b = (p1.x+EXTRAPOL_RATIO*(p2.x-p1.x), p1.y+EXTRAPOL_RATIO*(p2.y-p1.y) )
     return geometry.LineString([a,b])
 
-def get_ordered_list(linrig, point):
+def get_ordered_list(region, linrig, point):
     """ Given LinearRing and point returns list of points closest to said point from polygon """
-    x,y = linrig.xy
-    x, y = list(x), list(y)
-    point_list = list(zip(x,y))
-    point_list.sort(key = lambda p: np.sqrt((p[0] - point.x)**2 + (p[1] - point.y)**2))
-    point_list = [geometry.Point(p[0], p[1]) for p in point_list]
-    return point_list
+    intersected_multilinrig = linrig.intersection(region)
+    if isinstance(intersected_multilinrig, geometry.MultiLineString):
+        final_point_list = []
+        for intersected_linrig in list(intersected_multilinrig): #iterates through multilinestring and will flatten at the end
+            x,y = intersected_linrig.xy
+            x, y = list(x), list(y)
+            point_list = list(zip(x,y))
+            point_list.sort(key = lambda p: np.sqrt((p[0] - point.x)**2 + (p[1] - point.y)**2))
+            point_list = [geometry.Point(p[0], p[1]) for p in point_list]
+            final_point_list.append(point_list)
 
-def repair_agent_skewer(agent, region, plot=False, save=False):
+        ret  = [item for sublist in final_point_list for item in sublist] #Flattening
+    elif isinstance(intersected_multilinrig, geometry.LineString):
+        x,y = intersected_multilinrig.xy
+        x, y = list(x), list(y)
+        point_list = list(zip(x,y))
+        point_list.sort(key = lambda p: np.sqrt((p[0] - point.x)**2 + (p[1] - point.y)**2))
+        ret = [geometry.Point(p[0], p[1]) for p in point_list]
+    elif isinstance(intersected_multilinrig, geometry.GeometryCollection):
+        final_point_list = []
+        for item in list(intersected_multilinrig):
+            if isinstance(item, geometry.Point):
+                point_list = [item]
+            elif isinstance(item, geometry.LineString):
+                x,y = item.xy
+                x, y = list(x), list(y)
+                point_list = list(zip(x,y))
+                point_list.sort(key = lambda p: np.sqrt((p[0] - point.x)**2 + (p[1] - point.y)**2))
+                point_list = [geometry.Point(p[0], p[1]) for p in point_list]
+            final_point_list.append(point_list)
+        ret  = [item for sublist in final_point_list for item in sublist] #Flattening
+
+    else:
+        raise Exception("intersected_multilinrig was not a multilinrig, linrig, or geometry collection")
+
+    return ret
+
+def repair_agent_skewer(agent, region, plot=False, save=False, agent_number=0, generation=0):
     """ repairs agent to possibly cover the region, if the region is not covered it will return false if it is it will return true """
 
+    timeout = time.time() + 60*3#adding timeout feature, times out after 3 minutes
+
+    if plot == True:
+        # Clearing folder before we add new frames
+        os.mkdir("repair_frames/generation_{}/agent_{}".format(generation, agent_number))
+
     center_pt = region.centroid
+
+    bounding_box_poly = geometry.Polygon([bounding_box["bottom left"], bounding_box["bottom right"], bounding_box["top right"], bounding_box["top left"]])
 
     #Assigns dotted region, if a circle does not already contain the centroid then it will create a small circle around the centroid
     dot_region = get_circle(.01, center_pt.xy)
@@ -218,6 +257,10 @@ def repair_agent_skewer(agent, region, plot=False, save=False):
     count = 0
     new_dot_region = geometry.Polygon([(-.1, -.2), (.2, -.2), (.2, .2), (-.2, .2)]) #NOTE THIS SHOULDN"T BE HERE ITS A TEMPORARY FIX
     while not new_dot_region.contains(region):
+            
+        if time.time() > timeout:
+            print("fail by timeout in while loop")
+            return False
 
         if save == True:
             # Define a polygon feature geometry with one attribute
@@ -234,10 +277,13 @@ def repair_agent_skewer(agent, region, plot=False, save=False):
                     'properties': {'id': 123},
                 })
 
-
-        ordered_pts = get_ordered_list(dot_region.exterior, center_pt)
+        ordered_pts = get_ordered_list(region, dot_region.exterior, center_pt)
 
         for closest_pt in ordered_pts: #Iterates through all the closest points till it intersects a circle
+
+            if time.time() > timeout:
+                print("fail by timeout in for loop")
+                return False
 
             line_segment = get_extrapolated_line(center_pt, closest_pt) #Creates extrapolated line between closest poitns 
 
@@ -245,9 +291,6 @@ def repair_agent_skewer(agent, region, plot=False, save=False):
             if cascaded_union(non_translated_circles).intersects(line_segment): #First checks if the extrapolated line even intersects our circles
 
                 intersected_circles = [circle for circle in non_translated_circles if circle.intersects(line_segment)]
-                # for circle in agent.circle_list:
-                #     if circle.intersects(line_segment):
-                #         intersected_circles.append(circle)
             
                 skewered_circle = min(intersected_circles, key=center_pt.distance) #Finds the correct skewered circle the closer one
 
@@ -279,40 +322,134 @@ def repair_agent_skewer(agent, region, plot=False, save=False):
                 except ValueError:
                     break
 
-                #Resets center point if there's only one translated circle
-                #center_pt = dot_region.centroid
+                
+
+                try: 
+                    x,y = dot_region.exterior.xy #NOTE THIS SHOULDN"T BE HERE ITS A TEMPORARY FIX
+                except AttributeError: #If you end up getting a multipolygon
+                    return False
+
+                x,y = list(x), list(y)
+                lst = list(zip(x,y))
+                new_dot_region = geometry.Polygon(lst)
+
+
+
+                #Check if we should end the algorithim via sector scan
+                plot_sectors = False
+                if region.exterior.intersects(dot_region.exterior):
+                    plot_sectors = True
+                    remaining_regions = region.difference(dot_region.intersection(region))
+
+                    try: 
+                        remaining_regions = list(remaining_regions)
+                    except TypeError:
+                        remaining_regions = [remaining_regions]
+                    
+                    try:
+                        intersected_sectors = list(region.exterior.intersection(dot_region.exterior))
+
+                        #Creating of list we are going to insert points into
+                        grouped_intersected_sectors = [[] for i,_ in enumerate(remaining_regions)]
+                        for i, remaining_region in enumerate(remaining_regions):
+                            for pt in intersected_sectors:
+                                if remaining_region.exterior.contains(pt):
+                                    grouped_intersected_sectors[i].append(pt)
+                        
+                        tmp = []
+                        for i, intersected_sector in enumerate(grouped_intersected_sectors):
+                            if intersected_sector == [] or isinstance(intersected_sector, geometry.LineString):
+                                tmp.append(i)
+                                
+                        for index in sorted(tmp, reverse=True):
+                            del grouped_intersected_sectors[index]
+                            del remaining_regions[index]
+
+
+                        sector_list = []
+                        for intersected_sector, remaining_region in zip(grouped_intersected_sectors, remaining_regions):
+                            line1 = get_extrapolated_line(center_pt, intersected_sector[0])
+                            line2 = get_extrapolated_line(center_pt, intersected_sector[1])
+
+                            bounding_box_pt1 = bounding_box_poly.exterior.intersection(line1)
+                            bounding_box_pt2 = bounding_box_poly.exterior.intersection(line2)
+
+                            #Finds sectors of lines
+                            line_split_collection = [line1, line2]
+                            line_split_collection.append(bounding_box_poly.boundary) # collection of individual linestrings for splitting in a list and add the polygon lines to it.
+                            merged_lines = ops.linemerge(line_split_collection)
+                            border_lines = ops.unary_union(merged_lines)
+                            sector = list(ops.polygonize(border_lines))
+
+                            try:
+                                sector_0_area = sector[0].intersection(remaining_region).area
+                                sector_1_area = sector[1].intersection(remaining_region).area
+                            except:
+                                continue
+
+
+                            if sector_0_area > sector_1_area:
+                                sector_list.append(sector[0])
+                            else:
+                                sector_list.append(sector[1])
+                    except TypeError: #Tangent point intersection
+                        print(count)
+                        plot_sectors = False
+
 
                 #Plotting
                 if plot == True:
                     plt.figure(figsize=(6,6))
-                    plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
-                    plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
-                    agent.plot_agent(test_polygon, colors[1], colors[2], colors[3], bounding_box)
+                    plt.xlim([bounding_box["bottom left"][0] - .3, bounding_box["bottom right"][0] + .3])
+                    plt.ylim([bounding_box["bottom left"][1] - .3, bounding_box["top left"][1] + .3])
+                    plt.plot(*bounding_box_poly.exterior.xy, c='k')
+                    
+                    try:
+                        agent.plot_agent(test_polygon, colors[1], colors[2], colors[3], bounding_box)
+                    except: #Topology error or attribute error
+                        return False
+                        pass
+
                     for i, _ in enumerate(dot_region.interiors):
                         plt.plot(*dot_region.interiors[i].coords.xy, c='w')
-                    plt.plot(*skewered_circle.exterior.xy)
+
+                    try:
+                        for i, _ in enumerate(remaining_regions):
+                            plt.fill(*remaining_regions[i].exterior.xy, alpha=.5)
+                        plt.plot(*skewered_circle.exterior.xy)
+
+                        if plot_sectors:
+                            for sector in sector_list:
+                                plt.fill(*sector.exterior.xy, alpha=.3, c='g')
+
+                    except UnboundLocalError:
+                        pass
+
                     plt.plot(*region.exterior.xy)
-                    plt.plot(*line_segment.xy)
+                    plt.plot(*line_segment.xy, c='y')
                     plt.plot(*dot_region.exterior.xy, c='k', linestyle='--')
-                    plt.savefig("repair_frames/frame_{0:03d}".format(count))
+                    plt.savefig("repair_frames/generation_{}/agent_{}/frame_{}".format(generation, agent_number, count))
                     plt.close()
 
+                if region.exterior.intersects(dot_region.exterior):
+                    #Checking if sectors contain appropriate area for the program to converge
+                    for sector, remaining_region in zip(sector_list, remaining_regions):
+
+                        sector_circle_area = sector.intersection(cascaded_union(non_translated_circles)).area #Area of circles in sector
+                        remaining_area = remaining_region.area
+
+                        if (sector_circle_area * 1) < remaining_area: #The .9 is there because there will definatlye be some overlap between the skewered circles
+                            return False
+
+                if len(translated_circles) == 1:
+                    center_pt = translated_circles[0].centroid            
+                last_closest_pt = closest_pt
                 count += 1
+                break    
 
-                break
-        
-        try: 
-            x,y = dot_region.exterior.xy #NOTE THIS SHOULDN"T BE HERE ITS A TEMPORARY FIX
-        except AttributeError: #If you end up getting a multipolygon
+        if last_closest_pt.xy == ordered_pts[-1].xy:
             return False
 
-        x,y = list(x), list(y)
-        lst = list(zip(x,y))
-        new_dot_region = geometry.Polygon(lst)
-
-        if closest_pt.xy == ordered_pts[-1].xy:
-            return False
-            
     agent.remove_irrelavent_circles(region, .01)
     agent.update_agent()
 
@@ -320,13 +457,25 @@ def repair_agent_skewer(agent, region, plot=False, save=False):
 
 
 # GA part
-def repair_agents(agent_list, region, plot=False): 
+def repair_agents(agent_list, region, plot=False, generation=0): 
     """ Given a list of agents returns a list of repaired agents """
-
+    if plot == True:
+        # Clearing folder before we add new frames
+        folder = "/home/n/Documents/Research/GW-Localization-Tiling/repair_frames/"
+        for filename in os.listdir(folder):
+            file_path = os.path.join(folder, filename)
+            try:
+                if os.path.isfile(file_path) or os.path.islink(file_path):
+                    os.unlink(file_path)
+                elif os.path.isdir(file_path):
+                    shutil.rmtree(file_path)
+            except Exception as e:
+                print('Failed to delete %s. Reason: %s' % (file_path, e))
+        os.mkdir("/home/n/Documents/Research/GW-Localization-Tiling/repair_frames/generation_{}".format(generation))
     repaired_agent_list = []
     for i, agent in enumerate(agent_list): 
         printProgressBar(i, len(agent_list))
-        if repair_agent_skewer(agent, region, plot=plot):
+        if repair_agent_skewer(agent, region, plot=plot, generation=generation, agent_number=i):
             repaired_agent_list.append(agent)
 
     return repaired_agent_list
@@ -363,40 +512,15 @@ def selection(agent_list):
     return agent_list
 
 
-
 def crossover(agent_list, region):
     """ Crossover is determined by randomly splitting polygon in half and then taking circles from each side. It'll probably mess up on the
     boundary tbh but I couldn't think of another crossover function """
-
-    # def getExtrapoledLine(p1,p2):
-    #     'Creates a line extrapoled in p1->p2 direction'
-    #     EXTRAPOL_RATIO = 10
-    #     a = (p2[0]+EXTRAPOL_RATIO*(p1[0]-p2[0]), p2[1]+EXTRAPOL_RATIO*(p1[1]-p2[1]))
-    #     b = (p1[0]+EXTRAPOL_RATIO*(p2[0]-p1[0]), p1[1]+EXTRAPOL_RATIO*(p2[1]-p1[1]))
-    #     return geometry.LineString([a,b])
-
-    # line = getExtrapoledLine((region.centroid.x, region.centroid.y), (region.centroid.x + random.uniform(-1, 1), region.centroid.y\
-    #     + random.uniform(-1, 1)))
-
-    # merged = ops.linemerge([region.boundary, line])
-    # borders = ops.unary_union(merged)
-    # polygons = list(ops.polygonize(borders))
 
     offspring = []
     for _ in range(round(len(agent_list) / 2)):
 
         parent1 = random.choice(agent_list)
         parent2 = random.choice(agent_list)
-
-        #Generates an index distirubtion, we are getting a sorted list later but we want more elements from the beginning of the sorted list rather than the end
-        # total_circles = parent1.circle_list + parent2.circle_list
-        # sorted_circles = get_highest_area(region, total_circles)
-
-        # data_expon = expon.rvs(scale=1,loc=0,size=len(sorted_circles))
-        # prob_dist = sorted(data_expon, reverse=True)
-        # circle_pool = np.random.choice(sorted_circles, p=prob_dist)
-
-        # print(circle_pool)
 
         len_children = (len(parent1.circle_list) + len(parent2.circle_list)) // 2
 
@@ -411,15 +535,6 @@ def crossover(agent_list, region):
         parent2_circle_half_1 = list(parent2_sorted_circles[0::2])
         parent2_circle_half_2 = list(parent2_sorted_circles[1::2])
 
-
-        # parent1_circle_half_1 = [
-        #     circle for circle in parent1.circle_list[:len(parent1.circle_list)//2]]
-        # parent1_circle_half_2 = [
-        #     circle for circle in parent1.circle_list[len(parent1.circle_list)//2:]]
-        # parent2_circle_half_1 = [
-        #     circle for circle in parent2.circle_list[:len(parent2.circle_list)//2]]
-        # parent2_circle_half_2 = [
-        #     circle for circle in parent2.circle_list[len(parent2.circle_list)//2:]]
 
         child1 = Agent(radius=parent1.radius, bounding_box=parent1.bounding_box, adam=False)
         child2 = Agent(radius=parent1.radius, bounding_box=parent1.bounding_box, adam=False)
@@ -460,15 +575,14 @@ def mutation(agent_list):
 
     return agent_list
 
-
-def ga(region, radius, bounding_box):
+def ga(region, radius, bounding_box, initial_length=100, plot_regions=False):
 
 
     start = time.process_time() #Timing entire program
 
     before = time.process_time()
     print("Initializing Agents...")
-    agent_list = init_agents(radius, bounding_box)
+    agent_list = init_agents(radius, bounding_box, length=initial_length)
     print("Agents initialized. Run time {}".format(time.process_time() - before))
 
     for generation in range(generations):
@@ -479,7 +593,7 @@ def ga(region, radius, bounding_box):
 
         before = time.process_time()
         print("Repairing Agents")
-        agent_list = repair_agents(agent_list, region, plot=True)
+        agent_list = repair_agents(agent_list, region, plot=plot_regions, generation=generation)
         print("Sucessful. {} Agents remain. Run time {}".format(len(agent_list), time.process_time() - before))
         print()
 
@@ -500,7 +614,7 @@ def ga(region, radius, bounding_box):
 
 
         #Creating folder
-        os.mkdir("/home/n/Documents/Research/GW-Localization-Tiling/frames/generation_{0:03d}".format(generation))
+        os.mkdir("/home/n/Documents/Research/GW-Localization-Tiling/frames/generation_{}".format(generation))
 
         for i, agent in enumerate(agent_list):
             plt.figure(figsize=(6,6))
@@ -509,11 +623,10 @@ def ga(region, radius, bounding_box):
             plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
             plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
             plt.plot(*region.exterior.xy)
-            plt.savefig("frames/generation_{0:03d}/agent_{0:03d}".format(generation, i))
+            plt.savefig("frames/generation_{}/agent_{}".format(generation, i))
             plt.close()
 
-        print("frame saved in frames folder. Run time {}".format(time.process_time() - before))
-
+        print("frame saved in frames/generation_{}. Run time {}".format(generation, time.process_time() - before))
         print()
 
         before = time.process_time()
@@ -535,7 +648,7 @@ def ga(region, radius, bounding_box):
 
     print("Finished. Total execution time {}".format(time.process_time() - start))
 global population
-population = 2
+population = 200
 
 global generations
 generations = 100
@@ -549,7 +662,7 @@ bounding_box = {"bottom left": (-2, -2),
                 "top left": (-2, 2)}
 
 
-test_polygon = geometry.Polygon([(-.2, -.2), (.2, -.2), (.2, .2), (-.2, .2)])
+test_polygon = geometry.Polygon([(-.5, -.5), (.5, -.5), (.5, .5), (-.5, .5)])
 
 # Clearing folder before we add new frames
 folder = '/home/n/Documents/Research/GW-Localization-Tiling/frames'
@@ -563,103 +676,9 @@ for filename in os.listdir(folder):
     except Exception as e:
         print('Failed to delete %s. Reason: %s' % (file_path, e))
 
-ga(test_polygon, .2, bounding_box)
+ga(test_polygon, .2, bounding_box, initial_length=100, plot_regions=True)
 
 #Testing code region
-def repair_agent_center_sonar(agent, region):
-    """ repairs agent to possibly cover the region, if the region is not covered it will return false if it is it will return true """
-
-    center_pt = region.centroid
-
-    #Assigns dotted region, if a circle does not already contain the centroid then it will create a small circle around the centroid
-    dot_region = get_circle(.01, center_pt.xy)
-
-    translated_circles = [] 
-    for circle in agent.circle_list:
-        if circle.contains(center_pt):
-            dot_region = circle
-            center_pt = dot_region.centroid
-            translated_circles.append(circle) #Even though it's not technically a translated circled for this purpose its important to add it since later we don't want to double translate it
-            break
-
-    x,y = dot_region.exterior.coords.xy
-    x,y = list(x), list(y)
-    sweeping_pts = [geometry.Point(i,j) for i,j in zip(x,y)]
-    translated_circles = [] 
-
-    count = 0
-    while True:
-
-        for pt in sweeping_pts: #Iterates through all the closest points till it intersects a circle
-                    
-            line_segment = get_extrapolated_line(center_pt, pt) #Creates extrapolated line between closest poitns 
-
-            try:
-                closest_pt = geometry.polygon.LinearRing(list(dot_region.exterior.coords)).intersection(line_segment)[0] #Returns intersection of sweeping line with dotted region
-            except TypeError:
-                closest_pt = geometry.polygon.LinearRing(list(dot_region.exterior.coords)).intersection(line_segment)
-
-            non_translated_circles = diff(agent.circle_list, translated_circles)
-
-            if non_translated_circles == []: #No circles left to translate and we still haven't covered the region
-                return False
-
-            if dot_region.contains(region): #If the dot region contains the region itself it's sucessful
-                return True
-
-            non_translated_centroid_cirlces = [get_circle(.01, circle.centroid.xy) for circle in non_translated_circles]
-            if cascaded_union(non_translated_centroid_cirlces).intersects(line_segment): #First checks if the extrapolated line even intersects our circles
-                print(count, '---------------------------------', dot_region.contains(region), dot_region.contains(center_pt))
-
-                intersected_circles = [non_translated_circles[i] for i in range(0, len(non_translated_circles)) if non_translated_centroid_cirlces[i].intersects(line_segment)]         
-
-                skewered_circle = min(intersected_circles, key=center_pt.distance) #Finds the correct skewered circle the closer one
-
-                if skewered_circle.intersects(dot_region):
-                    dot_region = cascaded_union([dot_region, skewered_circle])
-                else:
-                    #Calculate where the line intersects the circle
-                    lring = geometry.polygon.LinearRing(list(skewered_circle.exterior.coords)) #Translate to line ring
-                    points_of_intersection = lring.intersection(line_segment)
-
-                    #In case the points of intersection is just a point and not a multipoint
-                    try: 
-                        closest_intersection =  min(points_of_intersection, key=center_pt.distance)
-                    except TypeError:
-                        closest_intersection = points_of_intersection
-
-                    #Calculate how much to translate the circle by
-                    delta_x = closest_pt.x - closest_intersection.x
-                    delta_y = closest_pt.y - closest_intersection.y
-                    translated_circle = affinity.translate(skewered_circle, xoff=delta_x, yoff=delta_y)
-
-
-                    #Moves circle
-                    agent.circle_list.remove(skewered_circle)
-                    agent.circle_list.append(translated_circle)
-                    
-                    translated_circles.append(translated_circle)
-
-                    #Increases size of dotted region
-                    dot_region = cascaded_union([dot_region, translated_circle])
-
-
-                #Plotting
-                plt.figure(figsize=(6,6))
-                plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
-                plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
-                agent.plot_agent(test_polygon, colors[1], colors[2], colors[3], bounding_box)
-                plt.plot(*skewered_circle.exterior.xy)
-                plt.plot(*region.exterior.xy)
-                plt.plot(*line_segment.xy)
-                plt.scatter(*closest_pt.xy, zorder=5, color='c')
-                plt.plot(*dot_region.exterior.xy, c='k', linestyle='--')
-                plt.savefig("repair_frames/frame_{0:03d}".format(count))
-                plt.close()
-
-                count += 1                
-    
-
-# agent = Agent(radius=.2, bounding_box=bounding_box, length=3)
+# agent = Agent(radius=.2, bounding_box=bounding_box, length=100)
 # tmp = repair_agent_skewer(agent, test_polygon, plot=True)
 # agent.plot_agent(test_polygon, colors[1], colors[2], colors[3], bounding_box)

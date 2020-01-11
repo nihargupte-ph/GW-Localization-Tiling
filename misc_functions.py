@@ -1,3 +1,6 @@
+import shapely.geometry as geometry
+from itertools import zip_longest
+
 def diff(li1, li2): 
     li_dif = [i for i in li1 + li2 if i not in li1 or i not in li2] 
     return li_dif
@@ -22,3 +25,11 @@ def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, 
     # Print New Line on Complete
     if iteration == total: 
         print()
+
+def lexographic_sort(p1, p2): 
+    """ Given two  shapely points, returns which is """
+
+def grouper(n, iterable, fillvalue=None):
+    "grouper(3, 'ABCDEFG', 'x') --> ABC DEF Gxx"
+    args = [iter(iterable)] * n
+    return list(zip_longest(fillvalue=fillvalue, *args))
