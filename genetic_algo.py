@@ -233,7 +233,7 @@ def get_ordered_list(region, linrig, point):
 
     return ret
 
-def repair_agent_skewer(agent, region, plot=False, save=False, agent_number=0, generation=0):
+def repair_agent_skewer(agent, region, plot=False, save=False, agent_number=0, generation=0, debug=False):
     """ repairs agent to possibly cover the region, if the region is not covered it will return false if it is it will return true """
 
     timeout = time.time() + 60*3#adding timeout feature, times out after 3 minutes
@@ -259,7 +259,8 @@ def repair_agent_skewer(agent, region, plot=False, save=False, agent_number=0, g
     while not new_dot_region.contains(region):
             
         if time.time() > timeout:
-            print("fail by timeout in while loop")
+            if debug:
+                print(agent_number, count, "fail by timeout in while loop")
             return False
 
         if save == True:
@@ -282,7 +283,8 @@ def repair_agent_skewer(agent, region, plot=False, save=False, agent_number=0, g
         for closest_pt in ordered_pts: #Iterates through all the closest points till it intersects a circle
 
             if time.time() > timeout:
-                print("fail by timeout in for loop")
+                if debug:
+                    print(agent_number, count, "fail by timeout in for loop")
                 return False
 
             line_segment = get_extrapolated_line(center_pt, closest_pt) #Creates extrapolated line between closest poitns 
@@ -327,6 +329,8 @@ def repair_agent_skewer(agent, region, plot=False, save=False, agent_number=0, g
                 try: 
                     x,y = dot_region.exterior.xy #NOTE THIS SHOULDN"T BE HERE ITS A TEMPORARY FIX
                 except AttributeError: #If you end up getting a multipolygon
+                    if debug:
+                        print(agent_number, count, "Exited because of multipolygon")
                     return False
 
                 x,y = list(x), list(y)
@@ -358,8 +362,12 @@ def repair_agent_skewer(agent, region, plot=False, save=False, agent_number=0, g
                         
                         tmp = []
                         for i, intersected_sector in enumerate(grouped_intersected_sectors):
-                            if intersected_sector == [] or isinstance(intersected_sector, geometry.LineString):
+                            if intersected_sector == []:
                                 tmp.append(i)
+                            if isinstance(intersected_sector, geometry.LineString):
+                                if debug:
+                                    print(agent_number, count, "Exited because of linestring error")
+                                return False
                                 
                         for index in sorted(tmp, reverse=True):
                             del grouped_intersected_sectors[index]
@@ -407,8 +415,10 @@ def repair_agent_skewer(agent, region, plot=False, save=False, agent_number=0, g
                     try:
                         agent.plot_agent(test_polygon, colors[1], colors[2], colors[3], bounding_box)
                     except: #Topology error or attribute error
+                        if debug:
+                            print(agent_number, count, "Exited because of topology")
                         return False
-                        pass
+                        
 
                     for i, _ in enumerate(dot_region.interiors):
                         plt.plot(*dot_region.interiors[i].coords.xy, c='w')
@@ -439,6 +449,8 @@ def repair_agent_skewer(agent, region, plot=False, save=False, agent_number=0, g
                         remaining_area = remaining_region.area
 
                         if (sector_circle_area * 1) < remaining_area: #The .9 is there because there will definatlye be some overlap between the skewered circles
+                            if debug:
+                                print(agent_number, count, "Exited because of sector scan")
                             return False
 
                 if len(translated_circles) == 1:
@@ -448,11 +460,15 @@ def repair_agent_skewer(agent, region, plot=False, save=False, agent_number=0, g
                 break    
 
         if last_closest_pt.xy == ordered_pts[-1].xy:
+            if debug:
+                print(agent_number, "iterated through all points")
             return False
 
     agent.remove_irrelavent_circles(region, .01)
     agent.update_agent()
 
+    if debug:
+        print(agent_number, " Sucessfully repaired")
     return True
 
 
@@ -648,7 +664,7 @@ def ga(region, radius, bounding_box, initial_length=100, plot_regions=False):
 
     print("Finished. Total execution time {}".format(time.process_time() - start))
 global population
-population = 200
+population = 30
 
 global generations
 generations = 100
@@ -662,7 +678,7 @@ bounding_box = {"bottom left": (-2, -2),
                 "top left": (-2, 2)}
 
 
-test_polygon = geometry.Polygon([(-.5, -.5), (.5, -.5), (.5, .5), (-.5, .5)])
+test_polygon = geometry.Polygon([(-.4, -.4), (.4, -.4), (.4, .4), (-.4, .4)])
 
 # Clearing folder before we add new frames
 folder = '/home/n/Documents/Research/GW-Localization-Tiling/frames'
