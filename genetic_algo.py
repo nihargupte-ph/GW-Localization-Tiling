@@ -9,6 +9,7 @@ from shapely.ops import cascaded_union
 from shapely.ops import unary_union
 from rtree import index
 import random
+import pickle
 import matplotlib.pyplot as plt
 from scipy.stats import expon
 from misc_functions import *
@@ -73,9 +74,11 @@ class Agent:
 
         return self_intersection, self_intersection_fraction, region_intersection, region_nonintersection, region_intersection_fraction, region_nonintersection_fraction
 
-    def plot_agent(self, region, color1, color2, color3, bounding_box, ax=None, zorder=1):
+    def plot_agent(self, region, bounding_box, ax=None, zorder=1):
 
         """ Plots circle intersection and non interesection with region as well as self intersection"""
+
+        color1, color2, color3 = colors[1], colors[2], colors[3]
 
         #makes sure everything is nice and updated
         self.update_agent()
@@ -178,13 +181,13 @@ class Agent:
         for p in voronoi_polygons(Voronoi(center_points), diameter):
             self.voronoi_list.append(p.intersection(boundary_polygon))
 
-    def plot_voronoi(self):
+    def plot_voronoi(self, zorder, alpha):
         """ Plots voronoi diagrams """
 
         self.update_voronoi()
 
         for poly in self.voronoi_list:
-            plt.fill(*poly.exterior.xy, zorder=.1, alpha=.8)
+            plt.fill(*poly.exterior.xy, zorder=zorder, alpha=alpha)
 
 def double_intersection(polygon_list):
 
@@ -460,7 +463,7 @@ def repair_agent_skewer(agent, region, plot=False, save=False, agent_number=0, g
                     plt.xlim([bounding_box["bottom left"][0] - .3, bounding_box["bottom right"][0] + .3])
                     plt.ylim([bounding_box["bottom left"][1] - .3, bounding_box["top left"][1] + .3])
                     plt.plot(*bounding_box_poly.exterior.xy, c='k')
-                    agent.plot_agent(test_polygon, colors[1], colors[2], colors[3], bounding_box)                     
+                    agent.plot_agent(test_polygon, bounding_box)                     
                     for i, _ in enumerate(dot_region.interiors):
                         plt.plot(*dot_region.interiors[i].coords.xy, c='w')
 
@@ -533,7 +536,7 @@ def repair_agents(agent_list, region, plot=False, generation=0):
     repaired_agent_list = []
     for i, agent in enumerate(agent_list): 
         printProgressBar(i, len(agent_list))
-        if repair_agent_skewer(agent, region, plot=plot, generation=generation, agent_number=i, debug=True):
+        if repair_agent_skewer(agent, region, plot=plot, generation=generation, agent_number=i, debug=False):
             repaired_agent_list.append(agent)
 
     return repaired_agent_list
@@ -632,7 +635,7 @@ def mutation(agent_list):
 
     return agent_list
 
-def ga(region, radius, bounding_box, initial_length=100, plot_regions=False):
+def ga(region, radius, bounding_box, initial_length=100, plot_regions=False, save_agents=False):
 
 
     start = time.process_time() #Timing entire program
@@ -651,6 +654,11 @@ def ga(region, radius, bounding_box, initial_length=100, plot_regions=False):
         before = time.process_time()
         print("Repairing Agents")
         agent_list = repair_agents(agent_list, region, plot=plot_regions, generation=generation)
+        if save_agents:
+            os.mkdir("/home/n/Documents/Research/GW-Localization-Tiling/saved_agents/generation_{}".format(generation))
+            for i, agent in enumerate(agent_list):
+                with open('/home/n/Documents/Research/GW-Localization-Tiling/saved_agents/generation_{}/agent_{}.obj'.format(generation, i), 'wb') as output:
+                    pickle.dump(agent, output, pickle.HIGHEST_PROTOCOL)  
         print("Sucessful. {} Agents remain. Run time {}".format(len(agent_list), time.process_time() - before))
         print()
 
@@ -676,7 +684,7 @@ def ga(region, radius, bounding_box, initial_length=100, plot_regions=False):
         for i, agent in enumerate(agent_list):
             plt.figure(figsize=(6,6))
             agent.plot_agent(
-                region, colors[1], colors[2], colors[3], bounding_box, zorder=2)
+                region, bounding_box, zorder=2)
             plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
             plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
             plt.plot(*region.exterior.xy)
@@ -708,7 +716,7 @@ def ga(region, radius, bounding_box, initial_length=100, plot_regions=False):
 
     print("Finished. Total execution time {}".format(time.process_time() - start))
 global population
-population = 20
+population = 10
 
 global generations
 generations = 10
@@ -736,15 +744,29 @@ for filename in os.listdir(folder):
     except Exception as e:
         print('Failed to delete %s. Reason: %s' % (file_path, e))
 
-#ga(test_polygon, .2, bounding_box, initial_length=100, plot_regions=True)
+#ga(test_polygon, .2, bounding_box, initial_length=100, plot_regions=True, save_agents=True)
 
 #Testing code region
-agent = Agent(radius=.2, bounding_box=bounding_box, length=20)
+def breed_agent(parent1, parent2):
+    """ Breeds agents based on their voronoi diagrams """
+    parent1.update_voronoi()
+    parent2.update_voronoi()
+
+filehandler1 = open("/home/n/Documents/Research/GW-Localization-Tiling/saved_agents/generation_0/agent_0.obj", 'rb') 
+filehandler2 = open("/home/n/Documents/Research/GW-Localization-Tiling/saved_agents/generation_0/agent_1.obj", 'rb') 
+parent1 = pickle.load(filehandler1)
+parent2 = pickle.load(filehandler2)
+
+
+#parent2.plot_agent(test_polygon, bounding_box)
+
+#agent = Agent(radius=.2, bounding_box=bounding_box, length=20)
 #tmp = repair_agent_skewer(agent, test_polygon, plot=True)
 plt.figure(figsize=(6,6))
+parent2.plot_agent(test_polygon, bounding_box)
+parent2.plot_voronoi(zorder=2, alpha=.8)
 plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
 plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
-agent.plot_agent(test_polygon, colors[1], colors[2], colors[3], bounding_box)
+#agent.plot_agent(test_polygon, bounding_box)
 plt.plot(*test_polygon.exterior.xy)
-agent.plot_voronoi()
 plt.show()
