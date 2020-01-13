@@ -3,8 +3,10 @@ import os
 import shutil
 from shapely import geometry
 from shapely import affinity
+from scipy.spatial import Voronoi
 from shapely import ops
 from shapely.ops import cascaded_union
+from shapely.ops import unary_union
 from rtree import index
 import random
 import matplotlib.pyplot as plt
@@ -12,7 +14,6 @@ from scipy.stats import expon
 from misc_functions import *
 import fiona
 import time
-
 
 def get_circle(radius, center, step=100):
     """ Returns shapely polygon given radius and center """
@@ -54,11 +55,21 @@ class Agent:
     def get_intersections(self, region, bounding_box):
         """ Returns all types of intersections. self_intersection, self_intersection_fraction, region_intersection, region_nonintersection, region_intersection_fraction """
 
+
         self_intersection, self_intersection_fraction = double_intersection(
             self.circle_list)
 
         region_intersection, region_nonintersection, region_intersection_fraction, region_nonintersection_fraction = intersection_region(
             region, self.circle_list, bounding_box)
+
+        if isinstance(self_intersection, geometry.GeometryCollection):
+            self_intersection = geometry.MultiPolygon([shape for shape in self_intersection if not isinstance(shape, geometry.LineString)])
+        
+        if isinstance(region_intersection, geometry.GeometryCollection):
+            region_intersection = geometry.MultiPolygon([shape for shape in region_intersection if not isinstance(shape, geometry.LineString)])
+
+        if isinstance(region_nonintersection, geometry.GeometryCollection):
+            region_nonintersection = geometry.MultiPolygon([shape for shape in region_nonintersection if not isinstance(shape, geometry.LineString)])
 
         return self_intersection, self_intersection_fraction, region_intersection, region_nonintersection, region_intersection_fraction, region_nonintersection_fraction
 
@@ -72,7 +83,7 @@ class Agent:
         self_intersection, _, region_intersection, region_nonintersection, _, _ = self.get_intersections(
             region, bounding_box)
 
-        try: 
+        if isinstance(self_intersection, geometry.MultiPolygon):
             for p1 in self_intersection:
                 x1, y1 = p1.exterior.xy
 
@@ -80,8 +91,7 @@ class Agent:
                     plt.fill(x1, y1, c=color1, zorder=zorder+.1)
                 else:
                     ax.fill(x1, y1, c=color1, zorder=zorder+.1)
-
-        except TypeError:
+        elif isinstance(self_intersection, geometry.Polygon):
             p1 = self_intersection
             x1, y1 = p1.exterior.xy
 
@@ -89,8 +99,10 @@ class Agent:
                 plt.fill(x1, y1, c=color1, zorder=zorder+.1)
             else:
                 ax.fill(x1, y1, c=color1, zorder=zorder+.1)
+        else:
+            raise Exception("Not polygon or mutlipolygon")
 
-        try: 
+        if isinstance(region_nonintersection, geometry.MultiPolygon):
             for p3 in region_nonintersection:
                 x3, y3 = p3.exterior.xy
 
@@ -98,7 +110,7 @@ class Agent:
                     plt.fill(x3, y3, c=color3, zorder=zorder)
                 else:
                     ax.fill(x3, y3, c=color3, zorder=zorder)
-        except TypeError:
+        elif isinstance(region_nonintersection, geometry.Polygon):
             p3 = region_nonintersection
             x3, y3 = p3.exterior.xy
 
@@ -106,8 +118,10 @@ class Agent:
                 plt.fill(x3, y3, c=color3, zorder=zorder)
             else:
                 ax.fill(x3, y3, c=color3, zorder=zorder)
+        else:
+            raise Exception("Not polygon or mutlipolygon")
 
-        try: 
+        if isinstance(region_intersection, geometry.MultiPolygon):
             for p2 in region_intersection:
                 x2, y2 = p2.exterior.xy
 
@@ -115,7 +129,8 @@ class Agent:
                     plt.fill(x2, y2, c=color2, zorder=zorder)
                 else:
                     ax.fill(x2, y2, c=color2, zorder=zorder)
-        except TypeError:
+
+        elif isinstance(region_intersection, geometry.Polygon):
             p2 = region_intersection
             x2, y2 = p2.exterior.xy
 
@@ -123,6 +138,9 @@ class Agent:
                 plt.fill(x2, y2, c=color2, zorder=zorder)
             else:
                 ax.fill(x2, y2, c=color2, zorder=zorder)
+        else:
+            raise Exception("Not poygon or multipolygon")
+
 
         plt.legend(["Fitness: {}".format(self.fitness), "Number circles: {}".format(self.length)], loc='upper left')
 
@@ -138,6 +156,35 @@ class Agent:
 
         self.circle_list.append(new_circle)
 
+    def update_centers(self):
+        """ sets a list of centers given polyogn centers """
+
+        self.center_list = [shape.centroid for shape in self.circle_list]
+
+    def update_voronoi(self):
+        """ Get vornoi diagrams given circles """
+
+        self.update_centers() #makes sure there centers are accurate
+        center_points = [(item.x, item.y) for item in self.center_list]
+
+        boundary = np.array(
+        [bounding_box["bottom left"], bounding_box["bottom right"], bounding_box["top right"], bounding_box["top left"]])
+
+        x, y = boundary.T
+        diameter = np.linalg.norm(boundary.ptp(axis=0))
+
+        self.voronoi_list = []
+        boundary_polygon = geometry.Polygon(boundary)
+        for p in voronoi_polygons(Voronoi(center_points), diameter):
+            self.voronoi_list.append(p.intersection(boundary_polygon))
+
+    def plot_voronoi(self):
+        """ Plots voronoi diagrams """
+
+        self.update_voronoi()
+
+        for poly in self.voronoi_list:
+            plt.fill(*poly.exterior.xy, zorder=.1, alpha=.8)
 
 def double_intersection(polygon_list):
 
@@ -154,13 +201,19 @@ def double_intersection(polygon_list):
         merged_circles = cascaded_union([polygon_list[pos] for pos in idx.intersection(poly.bounds) if polygon_list[pos] != poly])
         intersec = poly.intersection(merged_circles)
 
+        if intersec.is_empty:
+            continue
+
         if isinstance(intersec, geometry.GeometryCollection): #For some reason linestrings are getting appended so i'm removing them
-            new_intersec = geometry.GeometryCollection([shape for shape in intersec if not isinstance(shape, geometry.LineString)])
+            new_intersec = geometry.GeometryCollection([layer_precision(shape).buffer(0) for shape in intersec if not isinstance(shape, geometry.LineString)])
+            intersections.append(new_intersec)
+        elif isinstance(intersec, geometry.MultiPolygon):
+            new_intersec = unary_union([layer_precision(poly).buffer(0) for poly in list(intersec)])
             intersections.append(new_intersec)
         else:
-            intersections.append(intersec)
+            intersections.append(layer_precision(intersec).buffer(0))
 
-    intersection = cascaded_union(intersections)
+    intersection = unary_union(intersections)
     intersection_area = intersection.area
     return intersection, intersection_area
 
@@ -236,7 +289,7 @@ def get_ordered_list(region, linrig, point):
 def repair_agent_skewer(agent, region, plot=False, save=False, agent_number=0, generation=0, debug=False):
     """ repairs agent to possibly cover the region, if the region is not covered it will return false if it is it will return true """
 
-    timeout = time.time() + 60*3#adding timeout feature, times out after 3 minutes
+    timeout = time.time() + 60*1#adding timeout feature, times out after 3 minutes
 
     if plot == True:
         # Clearing folder before we add new frames
@@ -258,11 +311,6 @@ def repair_agent_skewer(agent, region, plot=False, save=False, agent_number=0, g
     new_dot_region = geometry.Polygon([(-.1, -.2), (.2, -.2), (.2, .2), (-.2, .2)]) #NOTE THIS SHOULDN"T BE HERE ITS A TEMPORARY FIX
     while not new_dot_region.contains(region):
             
-        if time.time() > timeout:
-            if debug:
-                print(agent_number, count, "fail by timeout in while loop")
-            return False
-
         if save == True:
             # Define a polygon feature geometry with one attribute
             schema = {
@@ -280,10 +328,11 @@ def repair_agent_skewer(agent, region, plot=False, save=False, agent_number=0, g
 
         ordered_pts = get_ordered_list(region, dot_region.exterior, center_pt)
 
-        for closest_pt in ordered_pts: #Iterates through all the closest points till it intersects a circle
+        for i, closest_pt in enumerate(ordered_pts): #Iterates through all the closest points till it intersects a circle
 
             if time.time() > timeout:
                 if debug:
+                    print(sector_list)
                     print(agent_number, count, "fail by timeout in for loop")
                 return False
 
@@ -323,8 +372,7 @@ def repair_agent_skewer(agent, region, plot=False, save=False, agent_number=0, g
                     dot_region = cascaded_union([dot_region, translated_circle])
                 except ValueError:
                     break
-
-                
+  
 
                 try: 
                     x,y = dot_region.exterior.xy #NOTE THIS SHOULDN"T BE HERE ITS A TEMPORARY FIX
@@ -364,6 +412,8 @@ def repair_agent_skewer(agent, region, plot=False, save=False, agent_number=0, g
                         for i, intersected_sector in enumerate(grouped_intersected_sectors):
                             if intersected_sector == []:
                                 tmp.append(i)
+                            if len(intersected_sector) == 1:
+                                tmp.append(i)
                             if isinstance(intersected_sector, geometry.LineString):
                                 if debug:
                                     print(agent_number, count, "Exited because of linestring error")
@@ -401,7 +451,6 @@ def repair_agent_skewer(agent, region, plot=False, save=False, agent_number=0, g
                             else:
                                 sector_list.append(sector[1])
                     except TypeError: #Tangent point intersection
-                        print(count)
                         plot_sectors = False
 
 
@@ -411,15 +460,7 @@ def repair_agent_skewer(agent, region, plot=False, save=False, agent_number=0, g
                     plt.xlim([bounding_box["bottom left"][0] - .3, bounding_box["bottom right"][0] + .3])
                     plt.ylim([bounding_box["bottom left"][1] - .3, bounding_box["top left"][1] + .3])
                     plt.plot(*bounding_box_poly.exterior.xy, c='k')
-                    
-                    try:
-                        agent.plot_agent(test_polygon, colors[1], colors[2], colors[3], bounding_box)
-                    except: #Topology error or attribute error
-                        if debug:
-                            print(agent_number, count, "Exited because of topology")
-                        return False
-                        
-
+                    agent.plot_agent(test_polygon, colors[1], colors[2], colors[3], bounding_box)                     
                     for i, _ in enumerate(dot_region.interiors):
                         plt.plot(*dot_region.interiors[i].coords.xy, c='w')
 
@@ -455,14 +496,15 @@ def repair_agent_skewer(agent, region, plot=False, save=False, agent_number=0, g
 
                 if len(translated_circles) == 1:
                     center_pt = translated_circles[0].centroid            
-                last_closest_pt = closest_pt
+
                 count += 1
                 break    
 
-        if last_closest_pt.xy == ordered_pts[-1].xy:
-            if debug:
-                print(agent_number, "iterated through all points")
-            return False
+            else:
+                if i == len(ordered_pts):
+                    if debug:
+                        print("Iterated through all points")
+                        
 
     agent.remove_irrelavent_circles(region, .01)
     agent.update_agent()
@@ -491,7 +533,7 @@ def repair_agents(agent_list, region, plot=False, generation=0):
     repaired_agent_list = []
     for i, agent in enumerate(agent_list): 
         printProgressBar(i, len(agent_list))
-        if repair_agent_skewer(agent, region, plot=plot, generation=generation, agent_number=i):
+        if repair_agent_skewer(agent, region, plot=plot, generation=generation, agent_number=i, debug=True):
             repaired_agent_list.append(agent)
 
     return repaired_agent_list
@@ -500,7 +542,6 @@ def init_agents(radius, bounding_box, length=20):
 
     return [Agent(radius=radius, bounding_box=bounding_box, length=length) for _ in range(population)]
     
-
 
 def fitness(agent_list, region, bounding_box):
 
@@ -523,7 +564,7 @@ def selection(agent_list):
     agent_list = sorted(
         agent_list, key=lambda agent: agent.fitness, reverse=True)
     # DARWINISM HAHHAA
-    agent_list = agent_list[:int(.5 * len(agent_list))]
+    agent_list = agent_list[:int(.8 * len(agent_list))]
 
     return agent_list
 
@@ -662,12 +703,15 @@ def ga(region, radius, bounding_box, initial_length=100, plot_regions=False):
         print()
         print()
 
+        if generation == 1:
+            exit()
+
     print("Finished. Total execution time {}".format(time.process_time() - start))
 global population
-population = 30
+population = 20
 
 global generations
-generations = 100
+generations = 10
 
 global colors
 colors = ["#ade6e6", "#ade6ad", "#e6ade6", "#e6adad"]
@@ -692,9 +736,15 @@ for filename in os.listdir(folder):
     except Exception as e:
         print('Failed to delete %s. Reason: %s' % (file_path, e))
 
-ga(test_polygon, .2, bounding_box, initial_length=100, plot_regions=True)
+#ga(test_polygon, .2, bounding_box, initial_length=100, plot_regions=True)
 
 #Testing code region
-# agent = Agent(radius=.2, bounding_box=bounding_box, length=100)
-# tmp = repair_agent_skewer(agent, test_polygon, plot=True)
-# agent.plot_agent(test_polygon, colors[1], colors[2], colors[3], bounding_box)
+agent = Agent(radius=.2, bounding_box=bounding_box, length=20)
+#tmp = repair_agent_skewer(agent, test_polygon, plot=True)
+plt.figure(figsize=(6,6))
+plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
+plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
+agent.plot_agent(test_polygon, colors[1], colors[2], colors[3], bounding_box)
+plt.plot(*test_polygon.exterior.xy)
+agent.plot_voronoi()
+plt.show()
