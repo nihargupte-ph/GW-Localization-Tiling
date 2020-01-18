@@ -3,6 +3,7 @@ import os
 import shutil
 from shapely import geometry
 from shapely import affinity
+import scipy.optimize as optimize
 from scipy.spatial import Voronoi
 from shapely import ops
 from shapely.ops import cascaded_union
@@ -42,7 +43,6 @@ class Agent:
 
     def update_agent(self):
         self.length = len(self.circle_list)
-
 
     def remove_irrelavent_circles(self, region, threshold):
         """ Removes all circles in circle_list that intrsect the region less than threshold """
@@ -85,6 +85,8 @@ class Agent:
 
         self_intersection, _, region_intersection, region_nonintersection, _, _ = self.get_intersections(
             region, bounding_box)
+
+        empty_region = region.difference(unary_union(self.circle_list))
 
         if isinstance(self_intersection, geometry.MultiPolygon):
             for p1 in self_intersection:
@@ -144,8 +146,26 @@ class Agent:
         else:
             raise Exception("Not poygon or multipolygon")
 
+        if isinstance(empty_region, geometry.MultiPolygon):
+            for p4 in empty_region:
+                x2, y2 = p4.exterior.xy
 
-        plt.legend(["Fitness: {}".format(self.fitness), "Number circles: {}".format(self.length)], loc='upper left')
+                if ax == None:
+                    plt.fill(x2, y2, c='k', zorder=zorder)
+                else:
+                    ax.fill(x2, y2, c='k', zorder=zorder)
+
+        elif isinstance(empty_region, geometry.Polygon):
+            p4 = empty_region
+            x2, y2 = p4.exterior.xy
+
+            if ax == None:
+                plt.fill(x2, y2, c='k', zorder=zorder)
+            else:
+                ax.fill(x2, y2, c='k', zorder=zorder)
+        else:
+            raise Exception("Not poygon or multipolygon")
+
 
     def move_circle(self, old_circle, center): 
         """ Moves circle from circle_list to new center """
@@ -747,26 +767,92 @@ for filename in os.listdir(folder):
 #ga(test_polygon, .2, bounding_box, initial_length=100, plot_regions=True, save_agents=True)
 
 #Testing code region
-def breed_agent(parent1, parent2):
-    """ Breeds agents based on their voronoi diagrams """
-    parent1.update_voronoi()
-    parent2.update_voronoi()
+# def breed_agent(parent1, parent2):
+#     """ Breeds agents based on their voronoi diagrams """
+#     parent1.update_voronoi()
+#     parent2.update_voronoi()
 
-filehandler1 = open("/home/n/Documents/Research/GW-Localization-Tiling/saved_agents/generation_0/agent_0.obj", 'rb') 
-filehandler2 = open("/home/n/Documents/Research/GW-Localization-Tiling/saved_agents/generation_0/agent_1.obj", 'rb') 
-parent1 = pickle.load(filehandler1)
-parent2 = pickle.load(filehandler2)
+# filehandler1 = open("/home/n/Documents/Research/GW-Localization-Tiling/saved_agents/generation_0/agent_0.obj", 'rb') 
+# filehandler2 = open("/home/n/Documents/Research/GW-Localization-Tiling/saved_agents/generation_0/agent_1.obj", 'rb') 
+# parent1 = pickle.load(filehandler1)
+# parent2 = pickle.load(filehandler2)
 
 
 #parent2.plot_agent(test_polygon, bounding_box)
 
-#agent = Agent(radius=.2, bounding_box=bounding_box, length=20)
+agent = Agent(radius=.2, bounding_box=bounding_box, length=10)
+
+def intersection_area_inv(center_array, region, radius):
+    """ Returns inverse of area intersection with region """
+
+    real_centers = grouper(2, center_array)
+    polygon_list = [get_circle(radius, center) for center in real_centers]
+
+    #We don't want hard inverse because dividing by 0 will error out, so we use a soft inverse
+    r= region.intersection(unary_union(polygon_list)).area
+    s=3
+    soft_inv = 1 / ((1 + (r**s)) ** (1/s))
+
+    return soft_inv
+
+
+def repair_agent_BFGS(agent, region, plot=False, debug=False, generation=0, agent_number=0):
+    """ Given agent uses quasi newton secant update to rearrange circles in agent to cover the region """
+
+    agent.update_centers()
+
+    def generate_guess(length, region):
+        """ Generates random circles inside the region for an inital guess """
+        minx, miny, maxx, maxy = region.bounds
+        tupled =  [(random.uniform(minx, maxx), random.uniform(miny, maxy)) for i in range(0, length)]
+
+        return [item for sublist in tupled for item in sublist]
+
+    guess = generate_guess(len(agent.circle_list), region)
+    
+    optimized = optimize.minimize(intersection_area_inv, guess, args=(region, agent.radius), method="BFGS")
+
+    tupled_guess = grouper(2, guess)
+    tupled_optimized = grouper(2, optimized.x)
+
+    #Reassigns circle list
+    agent.circle_list = [get_circle(agent.radius, center) for center in tupled_optimized]
+
+
+
+    if debug:
+        print("Optimization was {}".format(optimized.success))
+
+    if plot:
+        #Plotting guess
+        agent.circle_list = [get_circle(agent.radius, center) for center in tupled_guess]
+        plt.figure(figsize=(6,6))
+        plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
+        plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
+        agent.plot_agent(test_polygon, bounding_box)
+        plt.plot(*test_polygon.exterior.xy)
+        plt.savefig("repair_frames/frame_{}".format("guess"))
+
+        #Plotting actual
+        agent.circle_list = [get_circle(agent.radius, center) for center in tupled_optimized]
+        plt.figure(figsize=(6,6))
+        plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
+        plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
+        agent.plot_agent(test_polygon, bounding_box)
+        plt.plot(*test_polygon.exterior.xy)
+        plt.savefig("repair_frames/frame_{}".format("BFGS optimized"))
+
+    if region.difference(unary_union(agent.circle_list)).area < 1e-8: #Precision errors
+        return True
+    else:
+        return False
+
 #tmp = repair_agent_skewer(agent, test_polygon, plot=True)
-plt.figure(figsize=(6,6))
-parent2.plot_agent(test_polygon, bounding_box)
-parent2.plot_voronoi(zorder=2, alpha=.8)
-plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
-plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
-#agent.plot_agent(test_polygon, bounding_box)
-plt.plot(*test_polygon.exterior.xy)
-plt.show()
+tmp = repair_agent_BFGS(agent, test_polygon, debug=False, plot=True)
+print(tmp)
+# plt.figure(figsize=(6,6))
+# plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
+# plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
+# agent.plot_agent(test_polygon, bounding_box)
+# plt.plot(*test_polygon.exterior.xy)
+# plt.show()
