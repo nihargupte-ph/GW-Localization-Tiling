@@ -29,7 +29,7 @@ def get_circle(radius, center, step=100):
 
 class Agent:
 
-    def __init__(self, radius=None, bounding_box=None, length=None, adam=True):
+    def __init__(self, radius=None, bounding_box=None, length=None, region=None):
         """ Agent object"""
 
         self.fitness = -1000  # Dummy value
@@ -37,21 +37,49 @@ class Agent:
         self.bounding_box = bounding_box
         self.length = length
 
-        if adam == True:
-            self.circle_list = [get_circle(radius, (random.uniform(bounding_box["bottom left"][0], bounding_box["bottom right"][0]), random.uniform(
-                bounding_box["bottom left"][1], bounding_box["top left"][1]))) for _ in range(length)]
+        if region != None:
+            """ Generates random circles inside the region for an inital guess """
+            minx, miny, maxx, maxy = region.bounds
+            tupled =  [(random.uniform(minx, maxx), random.uniform(miny, maxy)) for i in range(0, length)]
+            self.circle_list = [get_circle(self.radius, (c[0], c[1])) for c in tupled]
+            self.remove_irrelavent_circles(region, .05, .05)
 
     def update_agent(self):
         self.length = len(self.circle_list)
 
-    def remove_irrelavent_circles(self, region, threshold):
-        """ Removes all circles in circle_list that intrsect the region less than threshold """
+    def remove_irrelavent_circles(self, region, threshold_region, threshold_self):
+        """ Removes all circles in circle_list that intrsect the region less than threshold returns circles that were removed """
 
-        tmp_lst = []
+        original_circle_list = self.circle_list
+
+        kept_circles, removed_circles = [], []
         for circle in self.circle_list:
-            if circle.intersection(region).area > threshold:
-                tmp_lst.append(circle)
-        self.circle_list = tmp_lst
+            frac = circle.intersection(region).area / circle.area
+            if frac < threshold_region:
+                removed_circles.append(circle)
+            else:
+                kept_circles.append(circle)
+       
+        self.circle_list = kept_circles
+
+        kept_circles, removed_circles = [], []
+        for circle in self.circle_list:
+            rem_circle_list = self.circle_list[:] #Removes circle in list copy so we can check how much it intersects other circles
+            rem_circle_list = [circle for circle in rem_circle_list if circle not in removed_circles]
+            rem_circle_list.remove(circle)
+
+            frac = np.abs(unary_union(rem_circle_list).intersection(circle).area - circle.area) / circle.area
+
+            if frac < threshold_self:
+                removed_circles.append(circle)
+            else:
+                kept_circles.append(circle)
+
+
+        self.circle_list = kept_circles
+
+        return [circle for circle in original_circle_list if circle not in self.circle_list]
+
 
     def get_intersections(self, region, bounding_box):
         """ Returns all types of intersections. self_intersection, self_intersection_fraction, region_intersection, region_nonintersection, region_intersection_fraction """
@@ -163,19 +191,24 @@ class Agent:
                 plt.fill(x2, y2, c='k', zorder=zorder)
             else:
                 ax.fill(x2, y2, c='k', zorder=zorder)
+
+        labels = ["Fitness: {}".format(self.fitness), "Number of Circles: {}".format(self.length)]
+        if ax == None:
+            plt.legend(labels)
         else:
-            raise Exception("Not poygon or multipolygon")
+            ax.legend(labels)
 
-
-    def move_circle(self, old_circle, center): 
+    def move_circle(self, old_circle, delta_x, delta_y): 
         """ Moves circle from circle_list to new center """
+
+        old_center = old_circle.centroid
  
         try:
             self.circle_list.remove(old_circle)
         except:
             raise IndexError("The circle entered was not found in this agent")
 
-        new_circle = get_circle(self.radius, center)
+        new_circle = get_circle(self.radius, (old_center.x + delta_x, old_center.y + delta_y))
 
         self.circle_list.append(new_circle)
 
@@ -200,6 +233,13 @@ class Agent:
         boundary_polygon = geometry.Polygon(boundary)
         for p in voronoi_polygons(Voronoi(center_points), diameter):
             self.voronoi_list.append(p.intersection(boundary_polygon))
+
+    def plot_centers(self, zorder):
+        """ Plots the centers of the circles in black """
+        self.update_centers()
+
+        for center in self.center_list:
+            plt.scatter(center.x, center.y, c='k', zorder=zorder, s=2)
 
     def plot_voronoi(self, zorder, alpha):
         """ Plots voronoi diagrams """
@@ -254,291 +294,79 @@ def intersection_region(region, polygon_list, bounding_box):
 
     return intersection, nonoverlap, fraction_overlap, fraction_nonoverlap
 
+def intersection_area_inv(center_array, region, radius):
+    """ Returns inverse of area intersection with region """
 
-def get_highest_area(region, circle_list):
-    """ From a circle collection returns an ordered list of circles ordered by how much they intersect with the region """
+    real_centers = grouper(2, center_array)
+    polygon_list = [get_circle(radius, center) for center in real_centers]
 
-    temp_list = [(i, circle) for i, circle in enumerate(circle_list)]
-    _, ret_list = zip(*sorted(temp_list,key=lambda x: region.intersection(x[1]).area))
+    #We don't want hard inverse because dividing by 0 will error out, so we use a soft inverse
+    r= region.intersection(unary_union(polygon_list)).area
+    s=3
+    soft_inv = 1 / ((1 + (r**s)) ** (1/s))
 
-    return ret_list
-
-def get_extrapolated_line(p1,p2):
-    'Creates a line extrapoled in p1->p2 direction https://stackoverflow.com/questions/33159833/shapely-extending-line-feature'
-    EXTRAPOL_RATIO = 1000
-    a = p1
-    b = (p1.x+EXTRAPOL_RATIO*(p2.x-p1.x), p1.y+EXTRAPOL_RATIO*(p2.y-p1.y) )
-    return geometry.LineString([a,b])
-
-def get_ordered_list(region, linrig, point):
-    """ Given LinearRing and point returns list of points closest to said point from polygon """
-    intersected_multilinrig = linrig.intersection(region)
-    if isinstance(intersected_multilinrig, geometry.MultiLineString):
-        final_point_list = []
-        for intersected_linrig in list(intersected_multilinrig): #iterates through multilinestring and will flatten at the end
-            x,y = intersected_linrig.xy
-            x, y = list(x), list(y)
-            point_list = list(zip(x,y))
-            point_list.sort(key = lambda p: np.sqrt((p[0] - point.x)**2 + (p[1] - point.y)**2))
-            point_list = [geometry.Point(p[0], p[1]) for p in point_list]
-            final_point_list.append(point_list)
-
-        ret  = [item for sublist in final_point_list for item in sublist] #Flattening
-    elif isinstance(intersected_multilinrig, geometry.LineString):
-        x,y = intersected_multilinrig.xy
-        x, y = list(x), list(y)
-        point_list = list(zip(x,y))
-        point_list.sort(key = lambda p: np.sqrt((p[0] - point.x)**2 + (p[1] - point.y)**2))
-        ret = [geometry.Point(p[0], p[1]) for p in point_list]
-    elif isinstance(intersected_multilinrig, geometry.GeometryCollection):
-        final_point_list = []
-        for item in list(intersected_multilinrig):
-            if isinstance(item, geometry.Point):
-                point_list = [item]
-            elif isinstance(item, geometry.LineString):
-                x,y = item.xy
-                x, y = list(x), list(y)
-                point_list = list(zip(x,y))
-                point_list.sort(key = lambda p: np.sqrt((p[0] - point.x)**2 + (p[1] - point.y)**2))
-                point_list = [geometry.Point(p[0], p[1]) for p in point_list]
-            final_point_list.append(point_list)
-        ret  = [item for sublist in final_point_list for item in sublist] #Flattening
-
-    else:
-        raise Exception("intersected_multilinrig was not a multilinrig, linrig, or geometry collection")
-
-    return ret
-
-def repair_agent_skewer(agent, region, plot=False, save=False, agent_number=0, generation=0, debug=False):
-    """ repairs agent to possibly cover the region, if the region is not covered it will return false if it is it will return true """
-
-    timeout = time.time() + 60*1#adding timeout feature, times out after 3 minutes
-
-    if plot == True:
-        # Clearing folder before we add new frames
-        os.mkdir("repair_frames/generation_{}/agent_{}".format(generation, agent_number))
-
-    center_pt = region.centroid
-
-    bounding_box_poly = geometry.Polygon([bounding_box["bottom left"], bounding_box["bottom right"], bounding_box["top right"], bounding_box["top left"]])
-
-    #Assigns dotted region, if a circle does not already contain the centroid then it will create a small circle around the centroid
-    dot_region = get_circle(.01, center_pt.xy)
-    translated_circles = [] 
-    for circle in agent.circle_list:
-        if circle.contains(center_pt):
-            dot_region = circle
-            translated_circles.append(circle) #Even though it's not technically a translated circled for this purpose its important to add it since later we don't want to double translate it
-
-    count = 0
-    new_dot_region = geometry.Polygon([(-.1, -.2), (.2, -.2), (.2, .2), (-.2, .2)]) #NOTE THIS SHOULDN"T BE HERE ITS A TEMPORARY FIX
-    while not new_dot_region.contains(region):
-            
-        if save == True:
-            # Define a polygon feature geometry with one attribute
-            schema = {
-                'geometry': 'Polygon',
-                'properties': {'id': 'int'},
-            }
-
-            # Write a new Shapefile
-            with fiona.open('shape_files/{}.shp'.format(count), 'w', 'ESRI Shapefile', schema) as c:
-                ## If there are multiple geometries, put the "for" loop here
-                c.write({
-                    'geometry': geometry.mapping(dot_region),
-                    'properties': {'id': 123},
-                })
-
-        ordered_pts = get_ordered_list(region, dot_region.exterior, center_pt)
-
-        for i, closest_pt in enumerate(ordered_pts): #Iterates through all the closest points till it intersects a circle
-
-            if time.time() > timeout:
-                if debug:
-                    print(sector_list)
-                    print(agent_number, count, "fail by timeout in for loop")
-                return False
-
-            line_segment = get_extrapolated_line(center_pt, closest_pt) #Creates extrapolated line between closest poitns 
-
-            non_translated_circles = diff(agent.circle_list, translated_circles)
-            if cascaded_union(non_translated_circles).intersects(line_segment): #First checks if the extrapolated line even intersects our circles
-
-                intersected_circles = [circle for circle in non_translated_circles if circle.intersects(line_segment)]
-            
-                skewered_circle = min(intersected_circles, key=center_pt.distance) #Finds the correct skewered circle the closer one
-
-                #Calculate where the line intersects the circle
-                lring = geometry.polygon.LinearRing(list(skewered_circle.exterior.coords)) #Translate to line ring
-                points_of_intersection = lring.intersection(line_segment)
-
-                #In case the points of intersection is just a point and not a multipoint
-                try: 
-                    closest_intersection =  min(points_of_intersection, key=center_pt.distance)
-                except TypeError:
-                    closest_intersection = points_of_intersection
-
-                #Calculate how much to translate the circle by
-                delta_x = closest_pt.x - closest_intersection.x
-                delta_y = closest_pt.y - closest_intersection.y
-                translated_circle = affinity.translate(skewered_circle, xoff=delta_x, yoff=delta_y)
+    return soft_inv
 
 
-                #Moves circle
-                agent.circle_list.remove(skewered_circle)
-                agent.circle_list.append(translated_circle)
-                
-                translated_circles.append(translated_circle)
+def repair_agent_BFGS(agent, region, plot=False, debug=False, generation=0, agent_number=0):
+    """ Given agent uses quasi newton secant update to rearrange circles in agent to cover the region """
 
-                #Increases size of dotted region
-                try: 
-                    dot_region = cascaded_union([dot_region, translated_circle])
-                except ValueError:
-                    break
-  
+    if region.difference(unary_union(agent.circle_list)).area < 1e-10: #Check if we even need to update
+        return True
 
-                try: 
-                    x,y = dot_region.exterior.xy #NOTE THIS SHOULDN"T BE HERE ITS A TEMPORARY FIX
-                except AttributeError: #If you end up getting a multipolygon
-                    if debug:
-                        print(agent_number, count, "Exited because of multipolygon")
-                    return False
+    agent.update_centers()
 
-                x,y = list(x), list(y)
-                lst = list(zip(x,y))
-                new_dot_region = geometry.Polygon(lst)
+    #Guess is just the current circle list
+    agent.update_centers()
+    tupled = [(c.x, c.y) for c in agent.center_list]
+    guess = [item for sublist in tupled for item in sublist]
+    
+    optimized = optimize.minimize(intersection_area_inv, guess, args=(region, agent.radius), method="BFGS")
 
+    tupled_guess = grouper(2, guess)
+    tupled_optimized = grouper(2, optimized.x)
 
+    #Reassigns circle list
+    agent.circle_list = [get_circle(agent.radius, center) for center in tupled_optimized]
 
-                #Check if we should end the algorithim via sector scan
-                plot_sectors = False
-                if region.exterior.intersects(dot_region.exterior):
-                    plot_sectors = True
-                    remaining_regions = region.difference(dot_region.intersection(region))
-
-                    try: 
-                        remaining_regions = list(remaining_regions)
-                    except TypeError:
-                        remaining_regions = [remaining_regions]
-                    
-                    try:
-                        intersected_sectors = list(region.exterior.intersection(dot_region.exterior))
-
-                        #Creating of list we are going to insert points into
-                        grouped_intersected_sectors = [[] for i,_ in enumerate(remaining_regions)]
-                        for i, remaining_region in enumerate(remaining_regions):
-                            for pt in intersected_sectors:
-                                if remaining_region.exterior.contains(pt):
-                                    grouped_intersected_sectors[i].append(pt)
-                        
-                        tmp = []
-                        for i, intersected_sector in enumerate(grouped_intersected_sectors):
-                            if intersected_sector == []:
-                                tmp.append(i)
-                            if len(intersected_sector) == 1:
-                                tmp.append(i)
-                            if isinstance(intersected_sector, geometry.LineString):
-                                if debug:
-                                    print(agent_number, count, "Exited because of linestring error")
-                                return False
-                                
-                        for index in sorted(tmp, reverse=True):
-                            del grouped_intersected_sectors[index]
-                            del remaining_regions[index]
-
-
-                        sector_list = []
-                        for intersected_sector, remaining_region in zip(grouped_intersected_sectors, remaining_regions):
-                            line1 = get_extrapolated_line(center_pt, intersected_sector[0])
-                            line2 = get_extrapolated_line(center_pt, intersected_sector[1])
-
-                            bounding_box_pt1 = bounding_box_poly.exterior.intersection(line1)
-                            bounding_box_pt2 = bounding_box_poly.exterior.intersection(line2)
-
-                            #Finds sectors of lines
-                            line_split_collection = [line1, line2]
-                            line_split_collection.append(bounding_box_poly.boundary) # collection of individual linestrings for splitting in a list and add the polygon lines to it.
-                            merged_lines = ops.linemerge(line_split_collection)
-                            border_lines = ops.unary_union(merged_lines)
-                            sector = list(ops.polygonize(border_lines))
-
-                            try:
-                                sector_0_area = sector[0].intersection(remaining_region).area
-                                sector_1_area = sector[1].intersection(remaining_region).area
-                            except:
-                                continue
-
-
-                            if sector_0_area > sector_1_area:
-                                sector_list.append(sector[0])
-                            else:
-                                sector_list.append(sector[1])
-                    except TypeError: #Tangent point intersection
-                        plot_sectors = False
-
-
-                #Plotting
-                if plot == True:
-                    plt.figure(figsize=(6,6))
-                    plt.xlim([bounding_box["bottom left"][0] - .3, bounding_box["bottom right"][0] + .3])
-                    plt.ylim([bounding_box["bottom left"][1] - .3, bounding_box["top left"][1] + .3])
-                    plt.plot(*bounding_box_poly.exterior.xy, c='k')
-                    agent.plot_agent(test_polygon, bounding_box)                     
-                    for i, _ in enumerate(dot_region.interiors):
-                        plt.plot(*dot_region.interiors[i].coords.xy, c='w')
-
-                    try:
-                        for i, _ in enumerate(remaining_regions):
-                            plt.fill(*remaining_regions[i].exterior.xy, alpha=.5)
-                        plt.plot(*skewered_circle.exterior.xy)
-
-                        if plot_sectors:
-                            for sector in sector_list:
-                                plt.fill(*sector.exterior.xy, alpha=.3, c='g')
-
-                    except UnboundLocalError:
-                        pass
-
-                    plt.plot(*region.exterior.xy)
-                    plt.plot(*line_segment.xy, c='y')
-                    plt.plot(*dot_region.exterior.xy, c='k', linestyle='--')
-                    plt.savefig("repair_frames/generation_{}/agent_{}/frame_{}".format(generation, agent_number, count))
-                    plt.close()
-
-                if region.exterior.intersects(dot_region.exterior):
-                    #Checking if sectors contain appropriate area for the program to converge
-                    for sector, remaining_region in zip(sector_list, remaining_regions):
-
-                        sector_circle_area = sector.intersection(cascaded_union(non_translated_circles)).area #Area of circles in sector
-                        remaining_area = remaining_region.area
-
-                        if (sector_circle_area * 1) < remaining_area: #The .9 is there because there will definatlye be some overlap between the skewered circles
-                            if debug:
-                                print(agent_number, count, "Exited because of sector scan")
-                            return False
-
-                if len(translated_circles) == 1:
-                    center_pt = translated_circles[0].centroid            
-
-                count += 1
-                break    
-
-            else:
-                if i == len(ordered_pts):
-                    if debug:
-                        print("Iterated through all points")
-                        
-
-    agent.remove_irrelavent_circles(region, .01)
-    agent.update_agent()
+    agent.remove_irrelavent_circles(region, .05, .05)
 
     if debug:
-        print(agent_number, " Sucessfully repaired")
-    return True
+        print("Optimization was {}".format(optimized.success))
+
+    if plot:
+        os.mkdir("repair_frames/generation_{}/agent_{}".format(generation, agent_number))
+        #Plotting guess
+        agent.circle_list = [get_circle(agent.radius, center) for center in tupled_guess]
+        plt.figure(figsize=(6,6))
+        plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
+        plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
+        agent.plot_agent(test_polygon, bounding_box)
+        plt.plot(*test_polygon.exterior.xy)
+        agent.plot_centers(2)
+        plt.savefig("repair_frames/generation_{}/agent_{}/frame_{}".format(generation, agent_number, "guess"))
+        plt.close()
+
+        #Plotting actual
+        agent.circle_list = [get_circle(agent.radius, center) for center in tupled_optimized]
+        plt.figure(figsize=(6,6))
+        plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
+        plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
+        agent.plot_agent(test_polygon, bounding_box)
+        plt.plot(*test_polygon.exterior.xy)
+        agent.plot_centers(2)
+        plt.savefig("repair_frames/generation_{}/agent_{}/frame_{}".format(generation, agent_number, "BFGS optimized"))
+        plt.close()
+
+    if region.difference(unary_union(agent.circle_list)).area < 1e-10: #Precision errors
+        return True
+    else:
+        return False
+
 
 
 # GA part
-def repair_agents(agent_list, region, plot=False, generation=0): 
+def repair_agents(agent_list, region, plot=False, generation=0, guess=False): 
     """ Given a list of agents returns a list of repaired agents """
     if plot == True:
         # Clearing folder before we add new frames
@@ -556,19 +384,19 @@ def repair_agents(agent_list, region, plot=False, generation=0):
     repaired_agent_list = []
     for i, agent in enumerate(agent_list): 
         printProgressBar(i, len(agent_list))
-        if repair_agent_skewer(agent, region, plot=plot, generation=generation, agent_number=i, debug=False):
+        if repair_agent_BFGS(agent, region, plot=plot, generation=generation, agent_number=i, debug=False):
             repaired_agent_list.append(agent)
 
     return repaired_agent_list
 
-def init_agents(radius, bounding_box, length=20):
+def init_agents(radius, bounding_box, region, length=20):
 
-    return [Agent(radius=radius, bounding_box=bounding_box, length=length) for _ in range(population)]
+    return [Agent(radius=radius, bounding_box=bounding_box, length=length, region=region) for _ in range(population)]
     
 
-def fitness(agent_list, region, bounding_box):
+def fitness(agent_list, region, bounding_box, initial_length):
 
-    alpha = 10
+    alpha = 2
     beta = 1
     chi = 1
 
@@ -577,7 +405,7 @@ def fitness(agent_list, region, bounding_box):
         _, _, frac_overlap, frac_nonoverlap = intersection_region(region, agent.circle_list, bounding_box)
         _, frac_self_intersection = double_intersection(agent.circle_list)
 
-        agent.fitness = (alpha * frac_overlap) - (beta * frac_nonoverlap) - (chi * frac_self_intersection)
+        agent.fitness = 10 - (alpha * (agent.length/initial_length)) - (beta * frac_nonoverlap) - (chi * frac_self_intersection)
 
     return agent_list
 
@@ -592,77 +420,180 @@ def selection(agent_list):
     return agent_list
 
 
-def crossover(agent_list, region):
-    """ Crossover is determined by randomly splitting polygon in half and then taking circles from each side. It'll probably mess up on the
-    boundary tbh but I couldn't think of another crossover function """
+def crossover(agent_list, region, plot=False, generation=0):
+    """ Crossover is determined by mixing voronoi diagrams """
+
+    def breed_agents(parent1, parent2):
+        """ Breeds agents based on their voronoi diagrams. Takes two parents as input and spits out 2 children as output """
+        parent1.update_centers() #Even though voronoi updates the centers for readability
+        parent2.update_centers()
+
+        parent1.update_voronoi()
+        parent2.update_voronoi()
+
+        child1_center_list = []
+        for i, vor_poly in enumerate(parent1.voronoi_list):
+            #Iterating through voronoi list and randomly selecting point_list from either parent 1 or parent 2
+
+            parent1_pt = parent1.center_list[i]
+
+            parent2_pts = [pt for pt in parent2.center_list if vor_poly.contains(pt)] #Generating list of points from parent 2 which are in vor_poly
+
+            choice = random.choice([1,2])
+
+            if choice == 1:
+                child1_center_list.append(parent1_pt)
+            elif choice == 2:
+                child1_center_list.extend(parent2_pts)
+
+        child2_center_list = []
+        for i, vor_poly in enumerate(parent2.voronoi_list):
+            #Iterating through voronoi list and randomly selecting point_list from either parent 1 or parent 2
+
+            parent1_pts = [pt for pt in parent1.center_list if vor_poly.contains(pt)] #Generating list of points from parent 2 which are in vor_poly
+
+            parent2_pt = parent2.center_list[i]
+
+            choice = random.choice([1,2])
+
+            if choice == 1:
+                child2_center_list.extend(parent1_pts)
+            elif choice == 2:
+                child2_center_list.append(parent2_pt)
+
+        child1 = Agent(radius=parent1.radius, bounding_box=parent1.bounding_box)
+        child2 = Agent(radius=parent1.radius, bounding_box=parent1.bounding_box)
+        child1.circle_list = [get_circle(child1.radius, (c.x, c.y)) for c in child1_center_list]
+        child2.circle_list = [get_circle(child2.radius, (c.x, c.y)) for c in child2_center_list]
+
+        return child1, child2
 
     offspring = []
-    for _ in range(round(len(agent_list) / 2)):
-
+    for i in range(round(len(agent_list) / 2)):
+        
+        #Randomly select parents from agent list, the same parent can (and probably will) be selected more than once at least once
         parent1 = random.choice(agent_list)
         parent2 = random.choice(agent_list)
 
-        len_children = (len(parent1.circle_list) + len(parent2.circle_list)) // 2
+        child1, child2 = breed_agents(parent1, parent2)
 
-        parent1_sorted_circles = get_highest_area(region, parent1.circle_list)
-        parent2_sorted_circles = get_highest_area(region, parent2.circle_list)
+        if plot:
+            os.mkdir("/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}/{}".format(generation, i))
 
-        parent1_sorted_circles[:len_children]
-        parent2_sorted_circles[:len_children]
+            plt.figure(figsize=(6,6))
+            plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
+            plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
+            plt.plot(*test_polygon.exterior.xy)
+            parent1.plot_voronoi(2, .3)
+            parent1.plot_centers(3)
+            plt.savefig("/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}/{}/parent1_voronoi.png".format(generation, i))
+            plt.close()
 
-        parent1_circle_half_1 = list(parent1_sorted_circles[0::2])
-        parent1_circle_half_2 = list(parent1_sorted_circles[1::2])
-        parent2_circle_half_1 = list(parent2_sorted_circles[0::2])
-        parent2_circle_half_2 = list(parent2_sorted_circles[1::2])
+            plt.figure(figsize=(6,6))
+            plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
+            plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
+            plt.plot(*test_polygon.exterior.xy)
+            parent2.plot_voronoi(2, .3)
+            parent2.plot_centers(3)
+            plt.savefig("/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}/{}/parent2_voronoi.png".format(generation, i))
+            plt.close()
+
+            child1, child2 = breed_agents(parent1, parent2)
+
+            plt.figure(figsize=(6,6))
+            plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
+            plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
+            plt.plot(*test_polygon.exterior.xy)
+            child1.plot_voronoi(2, .3)
+            child1.plot_centers(3)
+            plt.savefig("/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}/{}/child1_voronoi.png".format(generation, i))
+            plt.close()
+
+            plt.figure(figsize=(6,6))
+            plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
+            plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
+            plt.plot(*test_polygon.exterior.xy)
+            child2.plot_voronoi(2, .3)
+            child2.plot_centers(3)
+            plt.savefig("/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}/{}/child2_voronoi.png".format(generation, i))
+            plt.close()
 
 
-        child1 = Agent(radius=parent1.radius, bounding_box=parent1.bounding_box, adam=False)
-        child2 = Agent(radius=parent1.radius, bounding_box=parent1.bounding_box, adam=False)
-        child1.circle_list = parent1_circle_half_1 + parent2_circle_half_2
-        child2.circle_list = parent2_circle_half_1 + parent1_circle_half_2
+            #Plotting actual agents
+            plt.figure(figsize=(6,6))
+            plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
+            plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
+            plt.plot(*test_polygon.exterior.xy)
+            parent1.plot_agent(test_polygon, bounding_box)
+            parent1.plot_centers(3)
+            plt.savefig("/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}/{}/parent1.png".format(generation, i))
+            plt.close()
 
-        child1.remove_irrelavent_circles(region, 1e-5)
-        child2.remove_irrelavent_circles(region, 1e-5)
+            plt.figure(figsize=(6,6))
+            plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
+            plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
+            plt.plot(*test_polygon.exterior.xy)
+            parent2.plot_agent(test_polygon, bounding_box)
+            parent2.plot_centers(3)
+            plt.savefig("/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}/{}/parent2.png".format(generation, i))
+            plt.close()
 
-        child1.update_agent()
-        child2.update_agent()
+            child1, child2 = breed_agents(parent1, parent2)
 
-        offspring.append(child1)
-        offspring.append(child2)
+            plt.figure(figsize=(6,6))
+            plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
+            plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
+            plt.plot(*test_polygon.exterior.xy)
+            child1.plot_agent(test_polygon, bounding_box)
+            child1.plot_centers(3)
+            plt.savefig("/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}/{}/child1.png".format(generation, i))
+            plt.close()
+
+            plt.figure(figsize=(6,6))
+            plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
+            plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
+            plt.plot(*test_polygon.exterior.xy)
+            child2.plot_agent(test_polygon, bounding_box)
+            child2.plot_centers(3)
+            plt.savefig("/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}/{}/child2.png".format(generation, i))
+            plt.close()
 
     agent_list.extend(offspring)
 
     return agent_list
 
 
-def mutation(agent_list):
+def mutation(agent_list, region):
 
     for agent in agent_list:
 
-        for i, param in enumerate(agent.circle_list):
+        if random.uniform(0, 1) <= .05:
+            worst_circle_self = sorted(agent.circle_list, key=lambda x: unary_union(agent.circle_list).intersection(x).area)[0] #Finds circle which intersects with itself the most
 
-            if random.uniform(0, 1) <= .3:
+            agent.circle_list.remove(worst_circle_self)
 
-                add_or_sub = random.choice((0, 1))
-                if add_or_sub == 0:
-                    agent.circle_list.pop(random.randint(0, agent.length-1))
-                    agent.update_agent()
-                elif add_or_sub == 1:
-                    agent.circle_list.append(get_circle(agent.radius, (random.uniform(bounding_box["bottom left"][0], bounding_box["bottom right"][0]), random.uniform(bounding_box["bottom left"][1], bounding_box["top left"][1]))))
-                    agent.update_agent()
+        if random.uniform(0, 1) <= .1:
+            worst_circle_region = sorted(agent.circle_list, key=lambda x: region.intersection(x).area)[-1] #Finds circle which intersects region the least
 
-            #Maybe add a move circle feature here
+            agent.circle_list.remove(worst_circle_region)
+
+        if random.uniform(0, 1) <= .3:
+
+            circle_to_move = random.choice(agent.circle_list) #Chooses a random circle to move
+            delta_x = random.uniform(-.1, .1) #How much to move it
+            delta_y = random.uniform(-.1, .1)
+            agent.move_circle(circle_to_move, delta_x, delta_y)
 
     return agent_list
 
-def ga(region, radius, bounding_box, initial_length=100, plot_regions=False, save_agents=False):
+def ga(region, radius, bounding_box, initial_length=100, plot_regions=False, save_agents=False, plot_crossover=False):
 
 
     start = time.process_time() #Timing entire program
 
     before = time.process_time()
     print("Initializing Agents...")
-    agent_list = init_agents(radius, bounding_box, length=initial_length)
+    agent_list = init_agents(radius, bounding_box, region, length=initial_length)
     print("Agents initialized. Run time {}".format(time.process_time() - before))
 
     for generation in range(generations):
@@ -671,20 +602,21 @@ def ga(region, radius, bounding_box, initial_length=100, plot_regions=False, sav
 
         print("\ngeneration number: {}".format(generation))
 
-        before = time.process_time()
-        print("Repairing Agents")
-        agent_list = repair_agents(agent_list, region, plot=plot_regions, generation=generation)
-        if save_agents:
-            os.mkdir("/home/n/Documents/Research/GW-Localization-Tiling/saved_agents/generation_{}".format(generation))
-            for i, agent in enumerate(agent_list):
-                with open('/home/n/Documents/Research/GW-Localization-Tiling/saved_agents/generation_{}/agent_{}.obj'.format(generation, i), 'wb') as output:
-                    pickle.dump(agent, output, pickle.HIGHEST_PROTOCOL)  
-        print("Sucessful. {} Agents remain. Run time {}".format(len(agent_list), time.process_time() - before))
-        print()
+        if generation == 0:
+            before = time.process_time()
+            print("Repairing Agents")
+            agent_list = repair_agents(agent_list, region, plot=plot_regions, generation=generation, guess=True)
+            if save_agents:
+                os.mkdir("/home/n/Documents/Research/GW-Localization-Tiling/saved_agents/generation_{}".format(generation))
+                for i, agent in enumerate(agent_list):
+                    with open('/home/n/Documents/Research/GW-Localization-Tiling/saved_agents/generation_{}/agent_{}.obj'.format(generation, i), 'wb') as output:
+                        pickle.dump(agent, output, pickle.HIGHEST_PROTOCOL)  
+            print("Sucessful. {} Agents remain. Run time {}".format(len(agent_list), time.process_time() - before))
+            print()
 
         before = time.process_time()
         print("Determining Fitness")
-        agent_list = fitness(agent_list, region, bounding_box)
+        agent_list = fitness(agent_list, region, bounding_box, initial_length)
         print("Sucessful. Run time {}".format(time.process_time() - before))
         print()
 
@@ -696,7 +628,6 @@ def ga(region, radius, bounding_box, initial_length=100, plot_regions=False, sav
 
         before = time.process_time()
         agent_list.sort(key=lambda x: x.fitness, reverse=True)
-
 
         #Creating folder
         os.mkdir("/home/n/Documents/Research/GW-Localization-Tiling/frames/generation_{}".format(generation))
@@ -716,30 +647,43 @@ def ga(region, radius, bounding_box, initial_length=100, plot_regions=False, sav
 
         before = time.process_time()
         print("Beginning crossover")
-        agent_list = crossover(agent_list, region)
+        os.mkdir("/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}".format(generation))
+        agent_list = crossover(agent_list, region, plot=plot_crossover, generation=generation)
         print("Sucessful. Run time {}".format(time.process_time() - before))
         print()
 
         before = time.process_time()
         print("Mutating random agents")
-        agent_list = mutation(agent_list)
+        agent_list = mutation(agent_list, region)
         print("Sucessful. Run time {}".format(time.process_time() - before))
         print()
+
+        if generation > 0:
+            before = time.process_time()
+            print("Repairing Agents")
+            agent_list = repair_agents(agent_list, region, plot=plot_regions, generation=generation)
+            if save_agents:
+                os.mkdir("/home/n/Documents/Research/GW-Localization-Tiling/saved_agents/generation_{}".format(generation))
+                for i, agent in enumerate(agent_list):
+                    with open('/home/n/Documents/Research/GW-Localization-Tiling/saved_agents/generation_{}/agent_{}.obj'.format(generation, i), 'wb') as output:
+                        pickle.dump(agent, output, pickle.HIGHEST_PROTOCOL)  
+            print("Sucessful. {} Agents remain. Run time {}".format(len(agent_list), time.process_time() - before))
+            if len(agent_list) == 0:
+                break
+            print()
 
         print()
         print("Completed. Generational run time {}".format(time.process_time() - generation_start))
         print()
         print()
 
-        if generation == 1:
-            exit()
-
     print("Finished. Total execution time {}".format(time.process_time() - start))
+
 global population
-population = 10
+population = 100
 
 global generations
-generations = 10
+generations = 30
 
 global colors
 colors = ["#ade6e6", "#ade6ad", "#e6ade6", "#e6adad"]
@@ -753,103 +697,31 @@ bounding_box = {"bottom left": (-2, -2),
 test_polygon = geometry.Polygon([(-.4, -.4), (.4, -.4), (.4, .4), (-.4, .4)])
 
 # Clearing folder before we add new frames
-folder = '/home/n/Documents/Research/GW-Localization-Tiling/frames'
-for filename in os.listdir(folder):
-    file_path = os.path.join(folder, filename)
-    try:
-        if os.path.isfile(file_path) or os.path.islink(file_path):
-            os.unlink(file_path)
-        elif os.path.isdir(file_path):
-            shutil.rmtree(file_path)
-    except Exception as e:
-        print('Failed to delete %s. Reason: %s' % (file_path, e))
+folders_to_clear = ['/home/n/Documents/Research/GW-Localization-Tiling/frames', '/home/n/Documents/Research/GW-Localization-Tiling/repair_frames', '/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames']
+for folder in folders_to_clear:
+    for filename in os.listdir(folder):
+        file_path = os.path.join(folder, filename)
+        try:
+            if os.path.isfile(file_path) or os.path.islink(file_path):
+                os.unlink(file_path)
+            elif os.path.isdir(file_path):
+                shutil.rmtree(file_path)
+        except Exception as e:
+            print('Failed to delete %s. Reason: %s' % (file_path, e))
 
-#ga(test_polygon, .2, bounding_box, initial_length=100, plot_regions=True, save_agents=True)
+ga(test_polygon, .1, bounding_box, initial_length=48, plot_regions=True, save_agents=False, plot_crossover=True)
 
 #Testing code region
-# def breed_agent(parent1, parent2):
-#     """ Breeds agents based on their voronoi diagrams """
-#     parent1.update_voronoi()
-#     parent2.update_voronoi()
 
 # filehandler1 = open("/home/n/Documents/Research/GW-Localization-Tiling/saved_agents/generation_0/agent_0.obj", 'rb') 
 # filehandler2 = open("/home/n/Documents/Research/GW-Localization-Tiling/saved_agents/generation_0/agent_1.obj", 'rb') 
 # parent1 = pickle.load(filehandler1)
 # parent2 = pickle.load(filehandler2)
 
-
-#parent2.plot_agent(test_polygon, bounding_box)
-
-agent = Agent(radius=.2, bounding_box=bounding_box, length=10)
-
-def intersection_area_inv(center_array, region, radius):
-    """ Returns inverse of area intersection with region """
-
-    real_centers = grouper(2, center_array)
-    polygon_list = [get_circle(radius, center) for center in real_centers]
-
-    #We don't want hard inverse because dividing by 0 will error out, so we use a soft inverse
-    r= region.intersection(unary_union(polygon_list)).area
-    s=3
-    soft_inv = 1 / ((1 + (r**s)) ** (1/s))
-
-    return soft_inv
-
-
-def repair_agent_BFGS(agent, region, plot=False, debug=False, generation=0, agent_number=0):
-    """ Given agent uses quasi newton secant update to rearrange circles in agent to cover the region """
-
-    agent.update_centers()
-
-    def generate_guess(length, region):
-        """ Generates random circles inside the region for an inital guess """
-        minx, miny, maxx, maxy = region.bounds
-        tupled =  [(random.uniform(minx, maxx), random.uniform(miny, maxy)) for i in range(0, length)]
-
-        return [item for sublist in tupled for item in sublist]
-
-    guess = generate_guess(len(agent.circle_list), region)
-    
-    optimized = optimize.minimize(intersection_area_inv, guess, args=(region, agent.radius), method="BFGS")
-
-    tupled_guess = grouper(2, guess)
-    tupled_optimized = grouper(2, optimized.x)
-
-    #Reassigns circle list
-    agent.circle_list = [get_circle(agent.radius, center) for center in tupled_optimized]
-
-
-
-    if debug:
-        print("Optimization was {}".format(optimized.success))
-
-    if plot:
-        #Plotting guess
-        agent.circle_list = [get_circle(agent.radius, center) for center in tupled_guess]
-        plt.figure(figsize=(6,6))
-        plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
-        plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
-        agent.plot_agent(test_polygon, bounding_box)
-        plt.plot(*test_polygon.exterior.xy)
-        plt.savefig("repair_frames/frame_{}".format("guess"))
-
-        #Plotting actual
-        agent.circle_list = [get_circle(agent.radius, center) for center in tupled_optimized]
-        plt.figure(figsize=(6,6))
-        plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
-        plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
-        agent.plot_agent(test_polygon, bounding_box)
-        plt.plot(*test_polygon.exterior.xy)
-        plt.savefig("repair_frames/frame_{}".format("BFGS optimized"))
-
-    if region.difference(unary_union(agent.circle_list)).area < 1e-8: #Precision errors
-        return True
-    else:
-        return False
-
+#agent = Agent(radius=.2, bounding_box=bounding_box, length=10)
 #tmp = repair_agent_skewer(agent, test_polygon, plot=True)
-tmp = repair_agent_BFGS(agent, test_polygon, debug=False, plot=True)
-print(tmp)
+# tmp = repair_agent_BFGS(agent, test_polygon, debug=False, plot=True)
+# print(tmp)
 # plt.figure(figsize=(6,6))
 # plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
 # plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])

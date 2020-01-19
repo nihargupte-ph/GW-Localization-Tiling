@@ -103,3 +103,49 @@ def voronoi_polygons(voronoi, diameter):
         extra_edge = [voronoi.vertices[j] + dir_j * length,
                       voronoi.vertices[k] + dir_k * length]
         yield Polygon(np.concatenate((finite_part, extra_edge)))
+
+def get_extrapolated_line(p1,p2):
+    'Creates a line extrapoled in p1->p2 direction https://stackoverflow.com/questions/33159833/shapely-extending-line-feature'
+    EXTRAPOL_RATIO = 1000
+    a = p1
+    b = (p1.x+EXTRAPOL_RATIO*(p2.x-p1.x), p1.y+EXTRAPOL_RATIO*(p2.y-p1.y) )
+    return geometry.LineString([a,b])
+
+def get_ordered_list(region, linrig, point):
+    """ Given LinearRing and point returns list of points closest to said point from polygon """
+    intersected_multilinrig = linrig.intersection(region)
+    if isinstance(intersected_multilinrig, geometry.MultiLineString):
+        final_point_list = []
+        for intersected_linrig in list(intersected_multilinrig): #iterates through multilinestring and will flatten at the end
+            x,y = intersected_linrig.xy
+            x, y = list(x), list(y)
+            point_list = list(zip(x,y))
+            point_list.sort(key = lambda p: np.sqrt((p[0] - point.x)**2 + (p[1] - point.y)**2))
+            point_list = [geometry.Point(p[0], p[1]) for p in point_list]
+            final_point_list.append(point_list)
+
+        ret  = [item for sublist in final_point_list for item in sublist] #Flattening
+    elif isinstance(intersected_multilinrig, geometry.LineString):
+        x,y = intersected_multilinrig.xy
+        x, y = list(x), list(y)
+        point_list = list(zip(x,y))
+        point_list.sort(key = lambda p: np.sqrt((p[0] - point.x)**2 + (p[1] - point.y)**2))
+        ret = [geometry.Point(p[0], p[1]) for p in point_list]
+    elif isinstance(intersected_multilinrig, geometry.GeometryCollection):
+        final_point_list = []
+        for item in list(intersected_multilinrig):
+            if isinstance(item, geometry.Point):
+                point_list = [item]
+            elif isinstance(item, geometry.LineString):
+                x,y = item.xy
+                x, y = list(x), list(y)
+                point_list = list(zip(x,y))
+                point_list.sort(key = lambda p: np.sqrt((p[0] - point.x)**2 + (p[1] - point.y)**2))
+                point_list = [geometry.Point(p[0], p[1]) for p in point_list]
+            final_point_list.append(point_list)
+        ret  = [item for sublist in final_point_list for item in sublist] #Flattening
+
+    else:
+        raise Exception("intersected_multilinrig was not a multilinrig, linrig, or geometry collection")
+
+    return ret
