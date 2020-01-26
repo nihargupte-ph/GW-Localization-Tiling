@@ -16,6 +16,7 @@ from scipy.stats import expon
 from misc_functions import *
 import fiona
 import time
+from scipy.spatial import ConvexHull
 
 def get_circle(radius, center, step=100):
     """ Returns shapely polygon given radius and center """
@@ -40,7 +41,7 @@ class Agent:
         if region != None:
             """ Generates random circles inside the region for an inital guess """
             minx, miny, maxx, maxy = region.bounds
-            tupled =  [(random.uniform(minx, maxx), random.uniform(miny, maxy)) for i in range(0, length)]
+            tupled =  generate_random_in_polygon(self.length, region)
             self.circle_list = [get_circle(self.radius, (c[0], c[1])) for c in tupled]
             self.remove_irrelavent_circles(region, .05, .05)
 
@@ -80,7 +81,6 @@ class Agent:
 
         return [circle for circle in original_circle_list if circle not in self.circle_list]
 
-
     def get_intersections(self, region, bounding_box):
         """ Returns all types of intersections. self_intersection, self_intersection_fraction, region_intersection, region_nonintersection, region_intersection_fraction """
 
@@ -102,7 +102,7 @@ class Agent:
 
         return self_intersection, self_intersection_fraction, region_intersection, region_nonintersection, region_intersection_fraction, region_nonintersection_fraction
 
-    def plot_agent(self, region, bounding_box, ax=None, zorder=1):
+    def plot_agent(self, region, bounding_box, ax=None, zorder=1, fill=True):
 
         """ Plots circle intersection and non interesection with region as well as self intersection"""
 
@@ -116,87 +116,96 @@ class Agent:
 
         empty_region = region.difference(unary_union(self.circle_list))
 
-        if isinstance(self_intersection, geometry.MultiPolygon):
-            for p1 in self_intersection:
+        if fill:
+            if isinstance(self_intersection, geometry.MultiPolygon):
+                for p1 in self_intersection:
+                    x1, y1 = p1.exterior.xy
+
+                    if ax == None:
+                        plt.fill(x1, y1, c=color1, zorder=zorder+.1)
+                    else:
+                        ax.fill(x1, y1, c=color1, zorder=zorder+.1)
+            elif isinstance(self_intersection, geometry.Polygon):
+                p1 = self_intersection
                 x1, y1 = p1.exterior.xy
 
                 if ax == None:
                     plt.fill(x1, y1, c=color1, zorder=zorder+.1)
                 else:
                     ax.fill(x1, y1, c=color1, zorder=zorder+.1)
-        elif isinstance(self_intersection, geometry.Polygon):
-            p1 = self_intersection
-            x1, y1 = p1.exterior.xy
-
-            if ax == None:
-                plt.fill(x1, y1, c=color1, zorder=zorder+.1)
             else:
-                ax.fill(x1, y1, c=color1, zorder=zorder+.1)
-        else:
-            raise Exception("Not polygon or mutlipolygon")
+                raise Exception("Not polygon or mutlipolygon")
 
-        if isinstance(region_nonintersection, geometry.MultiPolygon):
-            for p3 in region_nonintersection:
+            if isinstance(region_nonintersection, geometry.MultiPolygon):
+                for p3 in region_nonintersection:
+                    x3, y3 = p3.exterior.xy
+
+                    if ax == None:
+                        plt.fill(x3, y3, c=color3, zorder=zorder)
+                    else:
+                        ax.fill(x3, y3, c=color3, zorder=zorder)
+            elif isinstance(region_nonintersection, geometry.Polygon):
+                p3 = region_nonintersection
                 x3, y3 = p3.exterior.xy
 
                 if ax == None:
                     plt.fill(x3, y3, c=color3, zorder=zorder)
                 else:
                     ax.fill(x3, y3, c=color3, zorder=zorder)
-        elif isinstance(region_nonintersection, geometry.Polygon):
-            p3 = region_nonintersection
-            x3, y3 = p3.exterior.xy
-
-            if ax == None:
-                plt.fill(x3, y3, c=color3, zorder=zorder)
             else:
-                ax.fill(x3, y3, c=color3, zorder=zorder)
-        else:
-            raise Exception("Not polygon or mutlipolygon")
+                raise Exception("Not polygon or mutlipolygon")
 
-        if isinstance(region_intersection, geometry.MultiPolygon):
-            for p2 in region_intersection:
+            if isinstance(region_intersection, geometry.MultiPolygon):
+                for p2 in region_intersection:
+                    x2, y2 = p2.exterior.xy
+
+                    if ax == None:
+                        plt.fill(x2, y2, c=color2, zorder=zorder)
+                    else:
+                        ax.fill(x2, y2, c=color2, zorder=zorder)
+
+            elif isinstance(region_intersection, geometry.Polygon):
+                p2 = region_intersection
                 x2, y2 = p2.exterior.xy
 
                 if ax == None:
                     plt.fill(x2, y2, c=color2, zorder=zorder)
                 else:
                     ax.fill(x2, y2, c=color2, zorder=zorder)
-
-        elif isinstance(region_intersection, geometry.Polygon):
-            p2 = region_intersection
-            x2, y2 = p2.exterior.xy
-
-            if ax == None:
-                plt.fill(x2, y2, c=color2, zorder=zorder)
             else:
-                ax.fill(x2, y2, c=color2, zorder=zorder)
-        else:
-            raise Exception("Not poygon or multipolygon")
+                raise Exception("Not poygon or multipolygon")
 
-        if isinstance(empty_region, geometry.MultiPolygon):
-            for p4 in empty_region:
+            if isinstance(empty_region, geometry.MultiPolygon):
+                for p4 in empty_region:
+                    x2, y2 = p4.exterior.xy
+
+                    if ax == None:
+                        plt.fill(x2, y2, c='k', zorder=zorder-.3)
+                    else:
+                        ax.fill(x2, y2, c='k', zorder=zorder-.3)
+
+            elif isinstance(empty_region, geometry.Polygon):
+                p4 = empty_region
                 x2, y2 = p4.exterior.xy
 
                 if ax == None:
-                    plt.fill(x2, y2, c='k', zorder=zorder)
+                    plt.fill(x2, y2, c='k', zorder=zorder-.3)
                 else:
-                    ax.fill(x2, y2, c='k', zorder=zorder)
+                    ax.fill(x2, y2, c='k', zorder=zorder-.3)
 
-        elif isinstance(empty_region, geometry.Polygon):
-            p4 = empty_region
-            x2, y2 = p4.exterior.xy
-
+        else:
             if ax == None:
-                plt.fill(x2, y2, c='k', zorder=zorder)
+                for circle in self.circle_list:
+                    plt.plot(*circle.exterior.xy, c='k')
             else:
-                ax.fill(x2, y2, c='k', zorder=zorder)
+                for circle in self.circle_list:
+                    ax.plot(*circle.exterior.xy, c='k')
 
         labels = ["Fitness: {}".format(self.fitness), "Number of Circles: {}".format(self.length)]
         if ax == None:
-            plt.legend(labels)
+            plt.legend(labels, loc='upper left')
         else:
-            ax.legend(labels)
+            ax.legend(labels, loc='upper left')
 
     def move_circle(self, old_circle, delta_x, delta_y): 
         """ Moves circle from circle_list to new center """
@@ -307,11 +316,10 @@ def intersection_area_inv(center_array, region, radius):
 
     return soft_inv
 
-
 def repair_agent_BFGS(agent, region, plot=False, debug=False, generation=0, agent_number=0):
     """ Given agent uses quasi newton secant update to rearrange circles in agent to cover the region """
 
-    if region.difference(unary_union(agent.circle_list)).area < 1e-10: #Check if we even need to update
+    if region.difference(unary_union(agent.circle_list)).area < .01: #Check if we even need to update
         return True
 
     agent.update_centers()
@@ -341,8 +349,8 @@ def repair_agent_BFGS(agent, region, plot=False, debug=False, generation=0, agen
         plt.figure(figsize=(6,6))
         plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
         plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
-        agent.plot_agent(test_polygon, bounding_box)
-        plt.plot(*test_polygon.exterior.xy)
+        agent.plot_agent(region, bounding_box)
+        plt.plot(*region.exterior.xy)
         agent.plot_centers(2)
         plt.savefig("repair_frames/generation_{}/agent_{}/frame_{}".format(generation, agent_number, "guess"))
         plt.close()
@@ -352,34 +360,34 @@ def repair_agent_BFGS(agent, region, plot=False, debug=False, generation=0, agen
         plt.figure(figsize=(6,6))
         plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
         plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
-        agent.plot_agent(test_polygon, bounding_box)
-        plt.plot(*test_polygon.exterior.xy)
+        agent.plot_agent(region, bounding_box)
+        plt.plot(*region.exterior.xy)
         agent.plot_centers(2)
         plt.savefig("repair_frames/generation_{}/agent_{}/frame_{}".format(generation, agent_number, "BFGS optimized"))
         plt.close()
 
-    if region.difference(unary_union(agent.circle_list)).area < 1e-10: #Precision errors
+    if region.difference(unary_union(agent.circle_list)).area < .01: #Precision errors
         return True
     else:
         return False
-
 
 
 # GA part
 def repair_agents(agent_list, region, plot=False, generation=0, guess=False): 
     """ Given a list of agents returns a list of repaired agents """
     if plot == True:
-        # Clearing folder before we add new frames
-        folder = "/home/n/Documents/Research/GW-Localization-Tiling/repair_frames/"
-        for filename in os.listdir(folder):
-            file_path = os.path.join(folder, filename)
-            try:
-                if os.path.isfile(file_path) or os.path.islink(file_path):
-                    os.unlink(file_path)
-                elif os.path.isdir(file_path):
-                    shutil.rmtree(file_path)
-            except Exception as e:
-                print('Failed to delete %s. Reason: %s' % (file_path, e))
+        if generation == 0:
+            # Clearing folder before we add new frames
+            folder = "/home/n/Documents/Research/GW-Localization-Tiling/repair_frames/"
+            for filename in os.listdir(folder):
+                file_path = os.path.join(folder, filename)
+                try:
+                    if os.path.isfile(file_path) or os.path.islink(file_path):
+                        os.unlink(file_path)
+                    elif os.path.isdir(file_path):
+                        shutil.rmtree(file_path)
+                except Exception as e:
+                    print('Failed to delete %s. Reason: %s' % (file_path, e))
         os.mkdir("/home/n/Documents/Research/GW-Localization-Tiling/repair_frames/generation_{}".format(generation))
     repaired_agent_list = []
     for i, agent in enumerate(agent_list): 
@@ -567,12 +575,12 @@ def mutation(agent_list, region):
 
     for agent in agent_list:
 
-        if random.uniform(0, 1) <= .05:
+        if random.uniform(0, 1) <= .2:
             worst_circle_self = sorted(agent.circle_list, key=lambda x: unary_union(agent.circle_list).intersection(x).area)[0] #Finds circle which intersects with itself the most
 
             agent.circle_list.remove(worst_circle_self)
 
-        if random.uniform(0, 1) <= .1:
+        if random.uniform(0, 1) <= .3:
             worst_circle_region = sorted(agent.circle_list, key=lambda x: region.intersection(x).area)[-1] #Finds circle which intersects region the least
 
             agent.circle_list.remove(worst_circle_region)
@@ -635,7 +643,7 @@ def ga(region, radius, bounding_box, initial_length=100, plot_regions=False, sav
         for i, agent in enumerate(agent_list):
             plt.figure(figsize=(6,6))
             agent.plot_agent(
-                region, bounding_box, zorder=2)
+                region, bounding_box, zorder=2, fill=True)
             plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
             plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
             plt.plot(*region.exterior.xy)
@@ -693,8 +701,10 @@ bounding_box = {"bottom left": (-2, -2),
                 "top right": (2, 2),
                 "top left": (-2, 2)}
 
+test_polygon = geometry.Polygon([(-.6, -.6), (.6, -.6), (.6, .6), (-.6, .6)])
 
-test_polygon = geometry.Polygon([(-.4, -.4), (.4, -.4), (.4, .4), (-.4, .4)])
+random_polygon_pts = generatePolygon(ctrX=0, ctrY=0, aveRadius=150, irregularity=0.35, spikeyness=0.2, numVerts=16 )
+random_polygon = geometry.Polygon(random_polygon_pts)
 
 # Clearing folder before we add new frames
 folders_to_clear = ['/home/n/Documents/Research/GW-Localization-Tiling/frames', '/home/n/Documents/Research/GW-Localization-Tiling/repair_frames', '/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames']
@@ -709,10 +719,9 @@ for folder in folders_to_clear:
         except Exception as e:
             print('Failed to delete %s. Reason: %s' % (file_path, e))
 
-ga(test_polygon, .1, bounding_box, initial_length=48, plot_regions=True, save_agents=False, plot_crossover=True)
+ga(random_polygon, .2, bounding_box, initial_length=90, plot_regions=True, save_agents=False, plot_crossover=False)
 
 #Testing code region
-
 # filehandler1 = open("/home/n/Documents/Research/GW-Localization-Tiling/saved_agents/generation_0/agent_0.obj", 'rb') 
 # filehandler2 = open("/home/n/Documents/Research/GW-Localization-Tiling/saved_agents/generation_0/agent_1.obj", 'rb') 
 # parent1 = pickle.load(filehandler1)
