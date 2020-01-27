@@ -344,7 +344,7 @@ fov_radius = fov_diameter / 2
 #data_file.write('coinc_event_id\tpointings\n')
 
 #Open sample file, tested on 100
-i = 204
+i = 101
 
 m, metadata = fits.read_sky_map('data/' + dataset + '/' + str(i) + '.fits', nest=None)  
 
@@ -442,7 +442,11 @@ print(n)
 
 hp.mollview(n,nest=True,title='Optimized Coverage')	
 hp.mollview(l,nest=True,title='Initial Coverage')
-hp.cartview(testpix,nest=True)
+
+import matplotlib.pyplot as plt
+plt.show()
+
+#hp.cartview(testpix,nest=True)
 
 # file = open("opt_pointings/" + dataset + '_' + str(i) + '_Comb_Pointings.txt','w+')
 # file.write('\ndata/' + dataset + '/' + str(i) + '.fits Pointings\n\n' + str(final_pointings))
