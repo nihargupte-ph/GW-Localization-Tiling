@@ -344,7 +344,7 @@ fov_radius = fov_diameter / 2
 #data_file.write('coinc_event_id\tpointings\n')
 
 #Open sample file, tested on 100
-i = 101
+i = 204
 
 m, metadata = fits.read_sky_map('data/' + dataset + '/' + str(i) + '.fits', nest=None)  
 

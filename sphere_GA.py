@@ -5,8 +5,13 @@ import math
 from shapely import geometry
 from ligo.skymap.io import fits
 from spherical_geometry.polygon import SphericalPolygon
+from mpl_toolkits.basemap import Basemap
 import cartopy.crs as ccrs
 import matplotlib.pyplot as plt
+
+import geos
+print(geos.__file__)
+
 
 def convert_fits_xyz(dataset, number, nested=True, nside = None):
 
@@ -42,12 +47,25 @@ def xyz_to_lon_lat(X, Y, Z):
 
     return theta, phi, rho
 
+def get_circle(phi, theta, fov, step=16):
+    """ Returns SphericalPolygon given FOV and center of the polygon """
+    radius = math.tan(fov/2)
+    ret = SphericalPolygon.from_cone(phi, theta, radius, steps=step, degrees=False)
+    ret = ret.invert_polygon()
+    return ret
+
+def spherical_poly_to_poly(poly):
+    _X, _Y, _Z = zip(*poly.points)
+    lon, lat, rho = xyz_to_lon_lat(_X, _Y, _Z)
+    lon_lat = zip(lon, lat)
+    poly = geometry.Polygon(lon_lat)
+    return poly
+
 dataset = 'design_bns_astro' # name of dataset ('design_bns_astro' or 'design_bbh_astro')
 fov_diameter = 8 # FOV diameter in degrees
 
 # Convert FOV to radius and radians
 fov_diameter = np.deg2rad(fov_diameter)
-fov_radius = fov_diameter / 2
 
 #Open sample file, tested on 100
 i = 204
@@ -56,19 +74,16 @@ X, Y, Z = convert_fits_xyz(dataset, i)
 inside_point = X[1], Y[1], Z[1] #It's probably inside ?? NOTE should be cahnged though
 #We need to cluster the points before we convex hull
 region = SphericalPolygon.convex_hull(list(zip(X,Y,Z)))
-print(type(region))
 region = region.invert_polygon()
 
+circle = get_circle(0, 0, fov_diameter)
 
-ax = plt.axes(projection=ccrs.PlateCarree())
-for poly in region.polygons:
-    _X, _Y, _Z = zip(*poly.points)
-    lon, lat, rho = xyz_to_lon_lat(_X, _Y, _Z)
-    lon_lat = zip(lon, lat)
-    poly = geometry.Polygon(lon_lat)
-    ax.add_geometries([poly], ccrs.Geodetic(), color='blue')
+m = Basemap(projection='moll',lon_0=0,resolution='c')
+m.drawcoastlines()
+m.fillcontinents(color='coral',lake_color='aqua')
 
-ax.stock_img()
+circle.draw(m)
+region.draw(m)
 
 plt.show()
 
