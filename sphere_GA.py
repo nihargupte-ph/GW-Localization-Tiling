@@ -12,10 +12,11 @@ from matplotlib.patches import Polygon
 
 random.seed(0)
 
-def draw_screen_poly( lons, lats, m, **plot_args):
+def draw_screen_poly(poly, m, **plot_args):
+    lons, lats = list(poly.to_radec())[0]
     x, y = m( lons, lats )
     xy = list(zip(x,y))
-    poly = Polygon(xy)
+    poly = Polygon(xy, **plot_args)
     plt.gca().add_patch(poly)
 
 def convert_fits_xyz(dataset, number, nested=True, nside = None):
@@ -90,15 +91,13 @@ def intersection_region(region, polygon_list):
     """ Returns regions of intersection between the polygon_list and the region. Also returns the non intersection between polygon_list and the region. It will also return the fraction which the polygon list has covered """
 
     polygon_union = SphericalPolygon.multi_intersection(polygon_list)
-    try:
-        intersection = region.intersection(polygon_union)
-        fraction_overlap = intersection.area / region.area
-        outside = region.invert_polygon()
-        nonoverlap = polygon_union.intersection(outside)
-        fraction_nonoverlap = nonoverlap.area / (4 * math.pi)
-        return intersection, nonoverlap, fraction_overlap, fraction_nonoverlap
-    except:
-        return None, None, 0, 0
+    print(polygon_union)
+    intersection = region.intersection(polygon_union)
+    fraction_overlap = intersection.area() / region.area()
+    outside = region.invert_polygon()
+    nonoverlap = polygon_union.intersection(outside)
+    fraction_nonoverlap = nonoverlap.area() / (4 * math.pi)
+    return intersection, nonoverlap, fraction_overlap, fraction_nonoverlap
 
 
 
@@ -142,9 +141,25 @@ class Agent:
         self_intersection, _, region_intersection, region_nonintersection, _, _ = self.get_intersections(region)
 
         if fill:
-            for circle in agent.circle_list:
-                lons, lats = list(circle.to_radec())[0]
-                draw_screen_poly(lons, lats, m)
+            # for circle in agent.circle_list: #Filling in the actual circles
+            #     lons, lats = list(circle.to_radec())[0]
+            #     draw_screen_poly(lons, lats, m, color=color2, zorder=zorder)
+
+            for poly in self_intersection: #Filling in the actual circles
+
+                draw_screen_poly(poly, m, color=color1, zorder=zorder)
+
+            try:
+                for poly in region_intersection: #Filling in the actual circles
+                    draw_screen_poly(poly, m, color=color2, zorder=zorder)
+            except:
+                print("no region intersection")
+
+            try:
+                for poly in region_nonintersection: #Filling in the actual circles
+                    draw_screen_poly(poly, m, color=color3, zorder=zorder)
+            except:
+                print("no region non intersection")
 
 dataset = 'design_bns_astro' # name of dataset ('design_bns_astro' or 'design_bbh_astro')
 fov_diameter = 8 # FOV diameter in degrees
