@@ -6,12 +6,17 @@ from shapely import geometry
 from ligo.skymap.io import fits
 from spherical_geometry.polygon import SphericalPolygon
 from mpl_toolkits.basemap import Basemap
-import cartopy.crs as ccrs
 import matplotlib.pyplot as plt
+from misc_functions import *
+from matplotlib.patches import Polygon
 
-import geos
-print(geos.__file__)
+random.seed(0)
 
+def draw_screen_poly( lons, lats, m, **plot_args):
+    x, y = m( lons, lats )
+    xy = list(zip(x,y))
+    poly = Polygon(xy)
+    plt.gca().add_patch(poly)
 
 def convert_fits_xyz(dataset, number, nested=True, nside = None):
 
@@ -21,7 +26,7 @@ def convert_fits_xyz(dataset, number, nested=True, nside = None):
             nside = hp.npix2nside(len(m))
         else:
             nside = nside
-        
+
         #Obtain pixels covering the 90% region
         #Sorts pixels based on probability, 
         #then takes all pixel until cumulative sum is >= 90%
@@ -55,11 +60,91 @@ def get_circle(phi, theta, fov, step=16):
     return ret
 
 def spherical_poly_to_poly(poly):
-    _X, _Y, _Z = zip(*poly.points)
+    _X, _Y, _Z = zip(*list(poly.points)[0])
     lon, lat, rho = xyz_to_lon_lat(_X, _Y, _Z)
     lon_lat = zip(lon, lat)
     poly = geometry.Polygon(lon_lat)
     return poly
+
+def double_intersection(polygon_list):
+
+    """ Returns intersection between polygons in polygon_list and the area of their intersection """
+
+    interesections = []
+    union_of_polygons = SphericalPolygon.multi_intersection(polygon_list)
+    for poly in polygon_list:
+        try:
+            intersect = union_of_polygons.intersection(poly)
+            interesections.append(intersect)
+        except AssertionError: #NOTE don't really know why this is here
+            pass
+
+    
+    intersection = SphericalPolygon.multi_intersection(interesections)
+    intersection_area = intersection.area
+
+    return intersection, intersection_area
+
+def intersection_region(region, polygon_list):
+
+    """ Returns regions of intersection between the polygon_list and the region. Also returns the non intersection between polygon_list and the region. It will also return the fraction which the polygon list has covered """
+
+    polygon_union = SphericalPolygon.multi_intersection(polygon_list)
+    try:
+        intersection = region.intersection(polygon_union)
+        fraction_overlap = intersection.area / region.area
+        outside = region.invert_polygon()
+        nonoverlap = polygon_union.intersection(outside)
+        fraction_nonoverlap = nonoverlap.area / (4 * math.pi)
+        return intersection, nonoverlap, fraction_overlap, fraction_nonoverlap
+    except:
+        return None, None, 0, 0
+
+
+
+class Agent:
+
+    def __init__(self, fov=None, length=None, region=None):
+        """ Agent object"""
+
+        self.fitness = -1000  # Dummy value
+        self.fov = fov
+        self.length = length
+
+        if region != None:
+            """ Generates random circles inside the region for an inital guess """
+            phi_theta = list(zip(list(region.to_radec())[0][0], list(region.to_radec())[0][1]))
+            phi_theta_polygon = geometry.Polygon(phi_theta)
+            tupled =  generate_random_in_polygon(self.length, phi_theta_polygon)
+            self.circle_list = [get_circle(np.radians(phi), np.radians(theta), self.fov) for phi, theta in tupled]
+
+    def update_agent(self):
+        self.length = len(self.circle_list)
+
+    def get_intersections(self, region):
+        """ Returns all types of intersections. self_intersection, self_intersection_fraction, region_intersection, region_nonintersection, region_intersection_fraction """
+
+        self_intersection, self_intersection_fraction = double_intersection(
+            self.circle_list)
+
+        region_intersection, region_nonintersection, region_intersection_fraction, region_nonintersection_fraction = intersection_region(
+            region, self.circle_list)
+
+        return self_intersection, self_intersection_fraction, region_intersection, region_nonintersection, region_intersection_fraction, region_nonintersection_fraction
+
+    def plot_agent(self, region, m, zorder=1, fill=True):
+        
+        color1, color2, color3 = colors[1], colors[2], colors[3]
+
+        #makes sure everything is nice and updated
+        self.update_agent()
+
+        self_intersection, _, region_intersection, region_nonintersection, _, _ = self.get_intersections(region)
+
+        if fill:
+            for circle in agent.circle_list:
+                lons, lats = list(circle.to_radec())[0]
+                draw_screen_poly(lons, lats, m)
 
 dataset = 'design_bns_astro' # name of dataset ('design_bns_astro' or 'design_bbh_astro')
 fov_diameter = 8 # FOV diameter in degrees
@@ -68,7 +153,10 @@ fov_diameter = 8 # FOV diameter in degrees
 fov_diameter = np.deg2rad(fov_diameter)
 
 #Open sample file, tested on 100
-i = 204
+i = 232
+
+global colors
+colors = ["#ade6e6", "#ade6ad", "#e6ade6", "#e6adad"]
 
 X, Y, Z = convert_fits_xyz(dataset, i)
 inside_point = X[1], Y[1], Z[1] #It's probably inside ?? NOTE should be cahnged though
@@ -76,14 +164,18 @@ inside_point = X[1], Y[1], Z[1] #It's probably inside ?? NOTE should be cahnged 
 region = SphericalPolygon.convex_hull(list(zip(X,Y,Z)))
 region = region.invert_polygon()
 
-circle = get_circle(0, 0, fov_diameter)
+agent = Agent(fov=fov_diameter, length=8, region=region)
 
-m = Basemap(projection='moll',lon_0=0,resolution='c')
+m = Basemap(projection='moll',lon_0=30,resolution='c')
 m.drawcoastlines()
 m.fillcontinents(color='coral',lake_color='aqua')
 
-circle.draw(m)
+# tmp_x = [-70, 0, 0, -70]
+# tmp_y = [-20, -20, 20, 20]
+# draw_screen_poly(tmp_x, tmp_y, m)
+
 region.draw(m)
+agent.plot_agent(region, m)
 
 plt.show()
 
