@@ -47,6 +47,8 @@ class Agent:
 
     def update_agent(self):
         self.length = len(self.circle_list)
+        self.update_centers()
+        self.update_voronoi()
 
     def remove_irrelavent_circles(self, region, threshold_region, threshold_self):
         """ Removes all circles in circle_list that intrsect the region less than threshold returns circles that were removed """
@@ -287,7 +289,9 @@ def double_intersection(polygon_list):
 
     intersection = unary_union(intersections)
     intersection_area = intersection.area
-    return intersection, intersection_area
+    total_area = unary_union(polygon_list).area
+    frac_intersection = intersection_area / total_area
+    return intersection, frac_intersection
 
 def intersection_region(region, polygon_list, bounding_box):
 
