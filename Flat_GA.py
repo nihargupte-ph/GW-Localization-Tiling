@@ -18,6 +18,8 @@ import fiona
 import time
 from scipy.spatial import ConvexHull
 
+random.seed(0)
+
 def get_circle(radius, center, step=100):
     """ Returns shapely polygon given radius and center """
 
@@ -317,7 +319,6 @@ def intersection_area_inv(center_array, region, radius):
     r= region.intersection(unary_union(polygon_list)).area
     s=3
     soft_inv = 1 / ((1 + (r**s)) ** (1/s))
-
     return soft_inv
 
 def repair_agent_BFGS(agent, region, plot=False, debug=False, generation=0, agent_number=0):
@@ -332,8 +333,10 @@ def repair_agent_BFGS(agent, region, plot=False, debug=False, generation=0, agen
     agent.update_centers()
     tupled = [(c.x, c.y) for c in agent.center_list]
     guess = [item for sublist in tupled for item in sublist]
-    
+
+   
     optimized = optimize.minimize(intersection_area_inv, guess, args=(region, agent.radius), method="BFGS")
+
 
     tupled_guess = grouper(2, guess)
     tupled_optimized = grouper(2, optimized.x)
@@ -692,7 +695,7 @@ def ga(region, radius, bounding_box, initial_length=100, plot_regions=False, sav
     print("Finished. Total execution time {}".format(time.process_time() - start))
 
 global population
-population = 100
+population = 1
 
 global generations
 generations = 30
@@ -723,7 +726,7 @@ for folder in folders_to_clear:
         except Exception as e:
             print('Failed to delete %s. Reason: %s' % (file_path, e))
 
-ga(random_polygon, .2, bounding_box, initial_length=90, plot_regions=True, save_agents=False, plot_crossover=False)
+ga(test_polygon, .2, bounding_box, initial_length=18, plot_regions=True, save_agents=False, plot_crossover=False)
 
 #Testing code region
 # filehandler1 = open("/home/n/Documents/Research/GW-Localization-Tiling/saved_agents/generation_0/agent_0.obj", 'rb') 
