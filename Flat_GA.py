@@ -456,7 +456,7 @@ def crossover(agent_list, region, plot=False, generation=0):
 
             choice = random.choice([1,2])
 
-            if choice == 1:
+            if choice == 1 or parent2_pts == []:
                 child1_center_list.append(parent1_pt)
             elif choice == 2:
                 child1_center_list.extend(parent2_pts)
@@ -471,7 +471,7 @@ def crossover(agent_list, region, plot=False, generation=0):
 
             choice = random.choice([1,2])
 
-            if choice == 1:
+            if choice == 1 or parent1_pts == []:
                 child2_center_list.extend(parent1_pts)
             elif choice == 2:
                 child2_center_list.append(parent2_pt)
@@ -491,6 +491,8 @@ def crossover(agent_list, region, plot=False, generation=0):
         parent2 = random.choice(agent_list)
 
         child1, child2 = breed_agents(parent1, parent2)
+        offspring.append(child1)
+        offspring.append(child2)
 
         if plot:
             os.mkdir("/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}/{}".format(generation, i))
@@ -695,7 +697,7 @@ def ga(region, radius, bounding_box, initial_length=100, plot_regions=False, sav
     print("Finished. Total execution time {}".format(time.process_time() - start))
 
 global population
-population = 1
+population = 10
 
 global generations
 generations = 30
@@ -726,7 +728,7 @@ for folder in folders_to_clear:
         except Exception as e:
             print('Failed to delete %s. Reason: %s' % (file_path, e))
 
-ga(test_polygon, .2, bounding_box, initial_length=18, plot_regions=True, save_agents=False, plot_crossover=False)
+ga(test_polygon, .2, bounding_box, initial_length=5, plot_regions=True, save_agents=False, plot_crossover=False)
 
 #Testing code region
 # filehandler1 = open("/home/n/Documents/Research/GW-Localization-Tiling/saved_agents/generation_0/agent_0.obj", 'rb') 

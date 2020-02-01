@@ -2,6 +2,7 @@
 import healpy as hp
 import numpy as np
 import shutil
+from scipy.spatial import SphericalVoronoi
 import math
 from shapely import geometry
 import scipy.optimize as optimize
@@ -12,8 +13,11 @@ from mpl_toolkits.basemap import Basemap
 import matplotlib.pyplot as plt
 from misc_functions import *
 from matplotlib.patches import Polygon
+from mpl_toolkits.mplot3d import proj3d                                         
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import os
 import time
+
 
 def get_m(**plot_args):
     m = Basemap(**plot_args)
@@ -64,15 +68,6 @@ def convert_fits_xyz(dataset, number, nested=True, nside = None):
         x, y, z = hp.pix2vec(nside,area_pix,nest=nested)
 
         return x, y, z
-
-def xyz_to_lon_lat(X, Y, Z):
-    """ Takes list of X, Y, and Z coordinates and spits out list of lon lat and rho """
-
-    theta = [math.degrees(math.atan(x/y)) for x, y in zip(X,Y)]
-    phi = [math.degrees(math.acos(z / math.sqrt((x**2)+(y**2)+(z**2)))) for x, y, z in zip(X,Y,Z)]
-    rho = [x**2 + y**2 + z**2 for x, y, z in zip(X,Y,Z)]
-
-    return theta, phi, rho
 
 def get_circle(phi, theta, fov, step=16):
     """ Returns SphericalPolygon given FOV and center of the polygon """
@@ -175,7 +170,7 @@ class Agent:
             self.remove_irrelavent_circles(region, .05, .05)
 
     def update_agent(self):
-        self.length = len(self.circle_list)
+        self.remove_irrelavent_circles(region, .05, .05)
 
     def get_intersections(self, region):
         """ Returns all types of intersections. self_intersection, self_intersection_fraction, region_intersection, region_nonintersection, region_intersection_fraction """
@@ -263,6 +258,36 @@ class Agent:
 
         self.center_list = [get_center(shape) for shape in self.circle_list]
 
+    def update_voronoi(self):
+        """ Get vornoi diagrams given circles """
+
+        self.update_centers() #makes sure there centers are accurate
+        lon, lat = zip(*self.center_list)
+        X, Y, Z = lon_lat_to_xyz(lon, lat, 1)
+        points = np.array(list(zip(X,Y,Z)))
+        self.spher_vor = SphericalVoronoi(points)
+        self.spher_vor.sort_vertices_of_regions()
+
+        self.voronoi_list = []
+        for region in self.spher_vor.regions:
+            vert = self.spher_vor.vertices[region] #Gets the verticies for a particular voronoi region
+            self.voronoi_list.append(SphericalPolygon(vert))
+
+    def plot_voronoi(self, ax,  **plot_args):
+        """ Plots voronoi diagrams """
+
+        self.update_voronoi()
+
+        lon, lat = zip(*self.center_list)
+        X, Y, Z = lon_lat_to_xyz(lon, lat, 1)
+        points = np.array(list(zip(X,Y,Z)))
+        ax.scatter(points[...,0], points[...,1], points[...,2])   
+
+        for region in self.spher_vor.regions:
+            polygon = Poly3DCollection([self.spher_vor.vertices[region]], **plot_args)                
+            polygon.set_color(np.random.rand(3,))                                             
+            ax.add_collection3d(polygon)
+
     def plot_centers(self, m, zorder):
         """ Plots the centers of the circles in black """
         self.update_centers()
@@ -304,6 +329,7 @@ def repair_agent_BFGS(agent, region, plot=False, debug=False, generation=0, agen
 
     #Reassigns circle list
     agent.circle_list = [get_circle(center[0], center[1], agent.fov) for center in tupled_optimized]
+    agent.remove_irrelavent_circles(region, .05, .05)
 
 
     if debug:
@@ -329,8 +355,7 @@ def repair_agent_BFGS(agent, region, plot=False, debug=False, generation=0, agen
         plt.savefig("repair_frames/generation_{}/agent_{}/frame_{}".format(generation, agent_number, "BFGS optimized"))
         plt.close()
 
-    if region.intersection(SphericalPolygon.multi_union(agent.circle_list)).area() / region.area() > .98: #Precision errors
-        print('=------------------------------q0-234aswef;laksd;flkasl;d')
+    if region.intersection(SphericalPolygon.multi_union(agent.circle_list)).area() / region.area() > .98: #Precision errors #NOTE
         return True
     else:
         return False
@@ -390,51 +415,65 @@ def selection(agent_list):
 
 def crossover(agent_list, region, plot=False, generation=0):
     """ Crossover is determined by mixing voronoi diagrams """
-
     def breed_agents(parent1, parent2):
-        """ Breeds agents based on their voronoi diagrams. Takes two parents as input and spits out 2 children as output """
-        parent1.update_centers() #Even though voronoi updates the centers for readability
-        parent2.update_centers()
+            """ Breeds agents based on their voronoi diagrams. Takes two parents as input and spits out 2 children as output """
+            parent1.update_voronoi()
+            parent2.update_voronoi()
 
-        parent1.update_voronoi()
-        parent2.update_voronoi()
+            child1_center_list = []
+            for i, vor_poly in enumerate(parent1.voronoi_list):
+                #Iterating through voronoi list and randomly selecting point_list from either parent 1 or parent 2
 
-        child1_center_list = []
-        for i, vor_poly in enumerate(parent1.voronoi_list):
-            #Iterating through voronoi list and randomly selecting point_list from either parent 1 or parent 2
+                parent1_pt = parent1.center_list[i]
 
-            parent1_pt = parent1.center_list[i]
+                lons, lats = zip(*parent2.center_list)
+                x,y,z = lon_lat_to_xyz(lons, lats, 1)
+                parent2_center_list_xyz = list(zip(x,y,z))
 
-            parent2_pts = [pt for pt in parent2.center_list if vor_poly.contains(pt)] #Generating list of points from parent 2 which are in vor_poly
+                parent2_pts = [pt for pt in parent2_center_list_xyz if vor_poly.contains_point(pt)] #Generating list of points from parent 2 which are in vor_poly
 
-            choice = random.choice([1,2])
+                choice = random.choice([1,2])
 
-            if choice == 1:
-                child1_center_list.append(parent1_pt)
-            elif choice == 2:
-                child1_center_list.extend(parent2_pts)
+                if choice == 1 or parent2_pts == []:
+                    child1_center_list.append(parent1_pt)
+                elif choice == 2:
+                    x,y,z = zip(*parent2_pts)
+                    lon, lat, _ = xyz_to_lon_lat(x, y, z)
+                    pt = list(zip(lon, lat))
+                    child1_center_list.extend(pt)
 
-        child2_center_list = []
-        for i, vor_poly in enumerate(parent2.voronoi_list):
-            #Iterating through voronoi list and randomly selecting point_list from either parent 1 or parent 2
 
-            parent1_pts = [pt for pt in parent1.center_list if vor_poly.contains(pt)] #Generating list of points from parent 2 which are in vor_poly
+            child2_center_list = []
+            for i, vor_poly in enumerate(parent2.voronoi_list):
+                #Iterating through voronoi list and randomly selecting point_list from either parent 1 or parent 2
 
-            parent2_pt = parent2.center_list[i]
+                parent2_pt = parent2.center_list[i]
 
-            choice = random.choice([1,2])
+                lons, lats = zip(*parent1.center_list)
+                x,y,z = lon_lat_to_xyz(lons, lats, 1)
+                parent1_center_list_xyz = list(zip(x,y,z))
 
-            if choice == 1:
-                child2_center_list.extend(parent1_pts)
-            elif choice == 2:
-                child2_center_list.append(parent2_pt)
+                parent1_pts = [pt for pt in parent1_center_list_xyz if vor_poly.contains_point(pt)] #Generating list of points from parent 2 which are in vor_poly
 
-        child1 = Agent(radius=parent1.radius, bounding_box=parent1.bounding_box)
-        child2 = Agent(radius=parent1.radius, bounding_box=parent1.bounding_box)
-        child1.circle_list = [get_circle(child1.radius, (c.x, c.y)) for c in child1_center_list]
-        child2.circle_list = [get_circle(child2.radius, (c.x, c.y)) for c in child2_center_list]
+                choice = random.choice([1,2])
 
-        return child1, child2
+                if choice == 1 or parent1_pts == []:
+                    child2_center_list.append(parent2_pt)
+                elif choice == 2:
+                    x,y,z = zip(*parent1_pts)
+                    lon, lat, _ = xyz_to_lon_lat(x, y, z)
+                    pt = list(zip(lon, lat))
+                    child2_center_list.extend(pt)
+
+            child1 = Agent(fov=parent1.fov)
+            child2 = Agent(fov=parent1.fov)
+            child1.circle_list = [get_circle(c[0], c[1], child1.fov) for c in child1_center_list]
+            child2.circle_list = [get_circle(c[0], c[1], child2.fov) for c in child2_center_list]
+
+            child1.update_agent()
+            child2.update_agent()
+
+            return child1, child2
 
     offspring = []
     for i in range(round(len(agent_list) / 2)):
@@ -444,6 +483,8 @@ def crossover(agent_list, region, plot=False, generation=0):
         parent2 = random.choice(agent_list)
 
         child1, child2 = breed_agents(parent1, parent2)
+        offspring.append(child1)
+        offspring.append(child2)
 
         if plot:
             os.mkdir("/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}/{}".format(generation, i))
@@ -639,4 +680,7 @@ for folder in folders_to_clear:
 
 population = 1
 generations = 1
-ga(region, 8, population, generations, initial_length=9, plot_regions=True, plot_crossover=False)
+#ga(region, 8, population, generations, initial_length=9, plot_regions=True, plot_crossover=False)
+
+
+#Testing code region

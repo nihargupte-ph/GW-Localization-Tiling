@@ -216,3 +216,21 @@ def generate_random_in_polygon(number, polygon):
             list_of_points.append((pnt.x, pnt.y))
             counter += 1
     return list_of_points
+
+def xyz_to_lon_lat(X, Y, Z):
+    """ Takes list of X, Y, and Z coordinates and spits out list of lon lat and rho """
+
+    phi = [math.degrees(np.arctan(y/x))+180 for x, y in zip(X,Y)]
+    theta = [math.degrees(np.arccos(z / math.sqrt((x**2)+(y**2)+(z**2))))+180 for x, y, z in zip(X,Y,Z)]
+    rho = [x**2 + y**2 + z**2 for x, y, z in zip(X,Y,Z)]
+
+    return phi, theta, rho
+
+def lon_lat_to_xyz(lons, lats, radius):
+    """ Converts set of points in longitude and lattitude to XYZ assuming r=1 """
+
+    X = radius*np.cos(np.radians(lons))*np.sin(np.radians(lats))
+    Y = radius*np.sin(np.radians(lons))*np.sin(np.radians(lats))
+    Z = radius*np.cos(np.radians(lats))
+
+    return X, Y, Z
