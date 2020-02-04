@@ -344,7 +344,7 @@ fov_radius = fov_diameter / 2
 #data_file.write('coinc_event_id\tpointings\n')
 
 #Open sample file, tested on 100
-i = 232
+i = 130
 
 m, metadata = fits.read_sky_map('data/' + dataset + '/' + str(i) + '.fits', nest=None)  
 
@@ -438,13 +438,14 @@ print(region90.area_pix)
 print()
 print(n)
 
+#rot=(70, -20, 0)
 
-
-hp.mollview(n,nest=True,title='Optimized Coverage')	
-hp.mollview(l,nest=True,title='Initial Coverage')
+hp.orthview(n,nest=True,title='Optimized Coverage', rot=(-70, 0, 0), half_sky=True)	
+#hp.mollview(l,nest=True,title='Initial Coverage')
 
 import matplotlib.pyplot as plt
-plt.show()
+plt.savefig("/home/n/Documents/Research/GW-Localization-Tiling/honeycomb_frames/honeycomb_{}".format(i))
+#plt.show()
 
 #hp.cartview(testpix,nest=True)
 

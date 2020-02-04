@@ -585,7 +585,7 @@ def mutation(agent_list, region):
     for agent in agent_list:
 
         if random.uniform(0, 1) <= .2:
-            worst_circle_self = sorted(agent.circle_list, key=lambda x: unary_union(agent.circle_list).intersection(x).area)[0] #Finds circle which intersects with itself the most
+            worst_circle_self = sorted(agent.circle_list, key=lambda x: unary_union(agent.circle_list[:].remove(x)).intersection(x).area)[0] #Finds circle which intersects with itself the most
 
             agent.circle_list.remove(worst_circle_self)
 

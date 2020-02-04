@@ -221,7 +221,7 @@ def xyz_to_lon_lat(X, Y, Z):
     """ Takes list of X, Y, and Z coordinates and spits out list of lon lat and rho """
 
     phi = [math.degrees(np.arctan(y/x))+180 for x, y in zip(X,Y)]
-    theta = [math.degrees(np.arccos(z / math.sqrt((x**2)+(y**2)+(z**2))))+180 for x, y, z in zip(X,Y,Z)]
+    theta = [math.degrees(np.arccos(z / math.sqrt((x**2)+(y**2)+(z**2))))+90 for x, y, z in zip(X,Y,Z)]
     rho = [x**2 + y**2 + z**2 for x, y, z in zip(X,Y,Z)]
 
     return phi, theta, rho
@@ -234,3 +234,13 @@ def lon_lat_to_xyz(lons, lats, radius):
     Z = radius*np.cos(np.radians(lats))
 
     return X, Y, Z
+
+def removal_copy(lst, x):
+    """ Returns a list with the element x removed """
+    ret = lst[:]
+    try:
+        ret.remove(x)
+    except:
+        raise Exception("The list does not contain this element")
+
+    return ret
