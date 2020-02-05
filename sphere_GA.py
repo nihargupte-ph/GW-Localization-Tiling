@@ -455,16 +455,17 @@ def init_agents(fov, region, population, length=20):
     
 def fitness(agent_list, region, initial_length):
 
-    alpha = 2
+    alpha = 2.1
     beta = 1
     chi = 1
+    sm = alpha + beta + chi
 
     for agent in agent_list:
 
         _, _, frac_overlap, frac_nonoverlap = intersection_region(region, agent.circle_list)
         _, frac_self_intersection = double_intersection(agent.circle_list)
 
-        agent.fitness = 10 - (alpha * (agent.length/initial_length)) - (beta * frac_nonoverlap) - (chi * frac_self_intersection)
+        agent.fitness = sm - (alpha * (agent.length/initial_length)) - (beta * frac_nonoverlap) - (chi * frac_self_intersection)
 
     return agent_list
 

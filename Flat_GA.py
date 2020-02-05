@@ -205,11 +205,11 @@ class Agent:
                 for circle in self.circle_list:
                     ax.plot(*circle.exterior.xy, c='k')
 
-        labels = ["Fitness: {}".format(self.fitness), "Number of Circles: {}".format(self.length)]
-        if ax == None:
-            plt.legend(labels, loc='upper left')
-        else:
-            ax.legend(labels, loc='upper left')
+        # labels = ["Fitness: {}".format(self.fitness), "Number of Circles: {}".format(self.length)]
+        # if ax == None:
+        #     plt.legend(labels, loc='upper left')
+        # else:
+        #     ax.legend(labels, loc='upper left')
 
     def move_circle(self, old_circle, delta_x, delta_y): 
         """ Moves circle from circle_list to new center """
@@ -344,7 +344,7 @@ def repair_agent_BFGS(agent, region, plot=False, debug=False, generation=0, agen
     #Reassigns circle list
     agent.circle_list = [get_circle(agent.radius, center) for center in tupled_optimized]
 
-    agent.remove_irrelavent_circles(region, .05, .05)
+    agent.remove_irrelavent_circles(region, .01, .0)
 
     if debug:
         print("Optimization was {}".format(optimized.success))
@@ -358,6 +358,7 @@ def repair_agent_BFGS(agent, region, plot=False, debug=False, generation=0, agen
         plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
         agent.plot_agent(region, bounding_box)
         plt.plot(*region.exterior.xy)
+        plt.axis('off')
         agent.plot_centers(2)
         plt.savefig("repair_frames/generation_{}/agent_{}/frame_{}".format(generation, agent_number, "guess"))
         plt.close()
@@ -367,6 +368,7 @@ def repair_agent_BFGS(agent, region, plot=False, debug=False, generation=0, agen
         plt.figure(figsize=(6,6))
         plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
         plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
+        plt.axis('off')
         agent.plot_agent(region, bounding_box)
         plt.plot(*region.exterior.xy)
         agent.plot_centers(2)
@@ -415,12 +417,14 @@ def fitness(agent_list, region, bounding_box, initial_length):
     beta = 1
     chi = 1
 
+    sm = alpha + beta + chi
+
     for agent in agent_list:
 
         _, _, frac_overlap, frac_nonoverlap = intersection_region(region, agent.circle_list, bounding_box)
         _, frac_self_intersection = double_intersection(agent.circle_list)
 
-        agent.fitness = 10 - (alpha * (agent.length/initial_length)) - (beta * frac_nonoverlap) - (chi * frac_self_intersection)
+        agent.fitness = sm - (alpha * (agent.length/initial_length)) - (beta * frac_nonoverlap) - (chi * frac_self_intersection)
 
     return agent_list
 
@@ -712,8 +716,8 @@ bounding_box = {"bottom left": (-2, -2),
 
 test_polygon = geometry.Polygon([(-.6, -.6), (.6, -.6), (.6, .6), (-.6, .6)])
 
-random_polygon_pts = generatePolygon(ctrX=0, ctrY=0, aveRadius=150, irregularity=0.35, spikeyness=0.2, numVerts=16 )
-random_polygon = geometry.Polygon(random_polygon_pts)
+# random_polygon_pts = generatePolygon(ctrX=0, ctrY=0, aveRadius=150, irregularity=0.35, spikeyness=0.2, numVerts=16 )
+# random_polygon = geometry.Polygon(random_polygon_pts)
 
 # Clearing folder before we add new frames
 folders_to_clear = ['/home/n/Documents/Research/GW-Localization-Tiling/frames', '/home/n/Documents/Research/GW-Localization-Tiling/repair_frames', '/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames']
@@ -728,7 +732,7 @@ for folder in folders_to_clear:
         except Exception as e:
             print('Failed to delete %s. Reason: %s' % (file_path, e))
 
-ga(test_polygon, .2, bounding_box, initial_length=5, plot_regions=True, save_agents=False, plot_crossover=False)
+ga(test_polygon, .2, bounding_box, initial_length=18, plot_regions=True, save_agents=False, plot_crossover=False)
 
 #Testing code region
 # filehandler1 = open("/home/n/Documents/Research/GW-Localization-Tiling/saved_agents/generation_0/agent_0.obj", 'rb') 
