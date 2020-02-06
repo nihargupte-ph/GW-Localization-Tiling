@@ -9,17 +9,6 @@ from spherical_geometry.polygon import SphericalPolygon
 from misc_functions import *
 from LIGO_Plotting import *
 
-#Temporary
-from mpl_toolkits.basemap import Basemap
-def get_m(**plot_args):
-    """ Given plot args returns a basemap "axis" with the proper plot args. Edit this function if you want different maps """
-    
-    
-    m = Basemap(projection='ortho', resolution='c', lon_0 = -70, lat_0 = 50, **plot_args)
-    #m.bluemarble()
-    return m
-
-
 def get_circle(phi, theta, fov, step=16):
     """ Returns SphericalPolygon given FOV and center of the polygon """
 
@@ -268,19 +257,17 @@ i = 130
 fov = 8
 
 #We need to cluster the points before we convex hull
-X, Y, Z = convert_fits_xyz(dataset, i)
+# X, Y, Z = convert_fits_xyz(dataset, i)
+# lons, lats, r = xyz_to_lon_lat(X, Y, Z)
+# lons = [lon - 180 for lon in lons]
+# lats = [lat - 90 for lat in lats]
+ras, decs = convert_fits_xyz(dataset, i)
+points = np.asarray([(ra, dec) for ra, dec in zip(ras, decs)])
 
-
-lons, lats, r = xyz_to_lon_lat(X, Y, Z)
-lons = [lon - 180 for lon in lons]
-lats = [lat - 90 for lat in lats]
-points = np.asarray([(lon, lat) for lon, lat in zip(lons, lats)])
 hull = ConvexHull(points)
-
 hull_pts = points[hull.vertices, :]
-ra, dec = zip(*hull_pts)
-dec = [90 - ang for ang in dec]
-region = SphericalPolygon.from_radec(ra, dec)
+hull_ra, hull_dec = zip(*hull_pts)
+region = SphericalPolygon.from_radec(hull_ra, hull_dec)
 
 
 intial_guess = 6

@@ -4,9 +4,19 @@ from itertools import zip_longest
 import numpy as np
 import random
 from ligo.skymap.io import fits
+from ligo.skymap.postprocess import find_greedy_credible_levels
 import healpy as hp
 import math
+from mpl_toolkits.basemap import Basemap
 from collections import defaultdict
+
+def get_m(**plot_args):
+    """ Given plot args returns a basemap "axis" with the proper plot args. Edit this function if you want different maps """
+    
+    
+    m = Basemap(projection='ortho', resolution='c', lon_0 = -70, lat_0 = 50, **plot_args)
+    #m.bluemarble()
+    return m
 
 def diff(li1, li2): 
     li_dif = [i for i in li1 + li2 if i not in li1 or i not in li2] 
@@ -108,52 +118,6 @@ def voronoi_polygons(voronoi, diameter):
                       voronoi.vertices[k] + dir_k * length]
         yield Polygon(np.concatenate((finite_part, extra_edge)))
 
-def get_extrapolated_line(p1,p2):
-    'Creates a line extrapoled in p1->p2 direction https://stackoverflow.com/questions/33159833/shapely-extending-line-feature'
-    EXTRAPOL_RATIO = 1000
-    a = p1
-    b = (p1.x+EXTRAPOL_RATIO*(p2.x-p1.x), p1.y+EXTRAPOL_RATIO*(p2.y-p1.y) )
-    return geometry.LineString([a,b])
-
-def get_ordered_list(region, linrig, point):
-    """ Given LinearRing and point returns list of points closest to said point from polygon """
-    intersected_multilinrig = linrig.intersection(region)
-    if isinstance(intersected_multilinrig, geometry.MultiLineString):
-        final_point_list = []
-        for intersected_linrig in list(intersected_multilinrig): #iterates through multilinestring and will flatten at the end
-            x,y = intersected_linrig.xy
-            x, y = list(x), list(y)
-            point_list = list(zip(x,y))
-            point_list.sort(key = lambda p: np.sqrt((p[0] - point.x)**2 + (p[1] - point.y)**2))
-            point_list = [geometry.Point(p[0], p[1]) for p in point_list]
-            final_point_list.append(point_list)
-
-        ret  = [item for sublist in final_point_list for item in sublist] #Flattening
-    elif isinstance(intersected_multilinrig, geometry.LineString):
-        x,y = intersected_multilinrig.xy
-        x, y = list(x), list(y)
-        point_list = list(zip(x,y))
-        point_list.sort(key = lambda p: np.sqrt((p[0] - point.x)**2 + (p[1] - point.y)**2))
-        ret = [geometry.Point(p[0], p[1]) for p in point_list]
-    elif isinstance(intersected_multilinrig, geometry.GeometryCollection):
-        final_point_list = []
-        for item in list(intersected_multilinrig):
-            if isinstance(item, geometry.Point):
-                point_list = [item]
-            elif isinstance(item, geometry.LineString):
-                x,y = item.xy
-                x, y = list(x), list(y)
-                point_list = list(zip(x,y))
-                point_list.sort(key = lambda p: np.sqrt((p[0] - point.x)**2 + (p[1] - point.y)**2))
-                point_list = [geometry.Point(p[0], p[1]) for p in point_list]
-            final_point_list.append(point_list)
-        ret  = [item for sublist in final_point_list for item in sublist] #Flattening
-
-    else:
-        raise Exception("intersected_multilinrig was not a multilinrig, linrig, or geometry collection")
-
-    return ret
-
 def generatePolygon( ctrX, ctrY, aveRadius, irregularity, spikeyness, numVerts ):
     ''' https://stackoverflow.com/questions/8997099/algorithm-to-generate-random-2d-polygon
     Start with the centre of the polygon at ctrX, ctrY, 
@@ -247,6 +211,9 @@ def removal_copy(lst, x):
 
     return ret
 
+
+import matplotlib.pyplot as plt
+
 def convert_fits_xyz(dataset, number, nested=True, nside = None):
     """ Given a fits file converts into xyz point """
 
@@ -258,6 +225,8 @@ def convert_fits_xyz(dataset, number, nested=True, nside = None):
     else:
         nside = nside
 
+
+
     #Obtain pixels covering the 90% region
     #Sorts pixels based on probability, 
     #then takes all pixel until cumulative sum is >= 90%
@@ -266,10 +235,31 @@ def convert_fits_xyz(dataset, number, nested=True, nside = None):
     msort = mflat[i]
     mcum = np.cumsum(msort)            
     ind_to_90 = len(mcum[mcum <= 0.9*mcum[-1]])
+    print(ind_to_90)
 
     area_pix = i[:ind_to_90]
-    max_pix  = i[0]
+    print(area_pix)
 
     x, y, z = hp.pix2vec(nside,area_pix,nest=nested)
 
-    return x, y, z
+    lon, lat, r = xyz_to_lon_lat(x, y, z)
+
+    theta, phi = hp.pix2ang(nside, area_pix)
+    ra = np.rad2deg(phi - (math.pi))
+    dec = np.rad2deg(theta - (math.pi/2))
+
+    l = np.zeros(len(m))
+    l[area_pix] = 0.00005
+
+    hp.orthview(l,nest=True,title='Optimized Coverage', rot=(-70, 0, 0), half_sky=True)	
+    plt.show()
+    
+    m = get_m()
+    print(lon, lat)
+    x,y = m(lon, lat)
+    m.scatter(x,y)
+    plt.show()
+
+    exit()
+
+    return ra, dec
