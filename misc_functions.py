@@ -215,6 +215,7 @@ def removal_copy(lst, x):
 import matplotlib.pyplot as plt
 
 def convert_fits_xyz(dataset, number, nested=True, nside = None):
+
     """ Given a fits file converts into xyz point """
 
     #Extracts data from fits file
@@ -260,6 +261,8 @@ def convert_fits_xyz(dataset, number, nested=True, nside = None):
     m.scatter(x,y)
     plt.show()
 
-    exit()
-
     return ra, dec
+
+dataset = 'design_bns_astro'
+i = 130
+convert_fits_xyz(dataset, i)
