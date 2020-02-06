@@ -3,6 +3,8 @@ from shapely.geometry import Polygon
 from itertools import zip_longest
 import numpy as np
 import random
+from ligo.skymap.io import fits
+import healpy as hp
 import math
 from collections import defaultdict
 
@@ -244,3 +246,30 @@ def removal_copy(lst, x):
         raise Exception("The list does not contain this element")
 
     return ret
+
+def convert_fits_xyz(dataset, number, nested=True, nside = None):
+    """ Given a fits file converts into xyz point """
+
+    #Extracts data from fits file
+    m, metadata = fits.read_sky_map('data/' + dataset + '/' + str(number) + '.fits', nest=None)
+
+    if nside is None: 
+        nside = hp.npix2nside(len(m))
+    else:
+        nside = nside
+
+    #Obtain pixels covering the 90% region
+    #Sorts pixels based on probability, 
+    #then takes all pixel until cumulative sum is >= 90%
+    mflat = m.flatten()
+    i = np.flipud(np.argsort(mflat))
+    msort = mflat[i]
+    mcum = np.cumsum(msort)            
+    ind_to_90 = len(mcum[mcum <= 0.9*mcum[-1]])
+
+    area_pix = i[:ind_to_90]
+    max_pix  = i[0]
+
+    x, y, z = hp.pix2vec(nside,area_pix,nest=nested)
+
+    return x, y, z

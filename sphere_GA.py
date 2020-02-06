@@ -53,33 +53,6 @@ def draw_screen_poly(poly, m, **plot_args):
     poly = Polygon(xy, **plot_args)
     plt.gca().add_patch(poly)
 
-def convert_fits_xyz(dataset, number, nested=True, nside = None):
-    """ Given a fits file converts into xyz point """
-
-    #Extracts data from fits file
-    m, metadata = fits.read_sky_map('data/' + dataset + '/' + str(number) + '.fits', nest=None)
-
-    if nside is None: 
-        nside = hp.npix2nside(len(m))
-    else:
-        nside = nside
-
-    #Obtain pixels covering the 90% region
-    #Sorts pixels based on probability, 
-    #then takes all pixel until cumulative sum is >= 90%
-    mflat = m.flatten()
-    i = np.flipud(np.argsort(mflat))
-    msort = mflat[i]
-    mcum = np.cumsum(msort)            
-    ind_to_90 = len(mcum[mcum <= 0.9*mcum[-1]])
-
-    area_pix = i[:ind_to_90]
-    max_pix  = i[0]
-
-    x, y, z = hp.pix2vec(nside,area_pix,nest=nested)
-
-    return x, y, z
-
 def get_circle(phi, theta, fov, step=16):
     """ Returns SphericalPolygon given FOV and center of the polygon """
 
@@ -716,7 +689,7 @@ def ga(region, fov, population, generations, initial_length=100, plot_regions=Fa
             print("Repairing Agents")
             agent_list = repair_agents(agent_list, region, plot=plot_regions, generation=generation)
             print("Sucessful. {} Agents remain. Run time {}".format(len(agent_list), time.process_time() - before))
-            if len(agent_list) == 0:
+            if len(agent_list) < 3:
                 break
             print()
 
@@ -726,6 +699,8 @@ def ga(region, fov, population, generations, initial_length=100, plot_regions=Fa
         print()
 
     print("Finished. Total execution time {}".format(time.process_time() - start))
+
+    return agent_list
 
 
 dataset = 'design_bns_astro' # name of dataset ('design_bns_astro' or 'design_bbh_astro')
@@ -738,16 +713,11 @@ global colors
 colors = ["#ade6e6", "#ade6ad", "#e6ade6", "#e6adad"]
 
 X, Y, Z = convert_fits_xyz(dataset, i)
-inside_point = X[1], Y[1], Z[1] #It's probably inside ?? 
+inside_point = X[1], Y[1], Z[1] #A point inside the region
 
 #We need to cluster the points before we convex hull
 region = SphericalPolygon.convex_hull(list(zip(X,Y,Z)))
 
-
-# m = get_m()
-# region.draw(m)
-# plt.show()
-# exit()
 
 # Clearing folder before we add new frames
 folders_to_clear = ['/home/n/Documents/Research/GW-Localization-Tiling/frames', '/home/n/Documents/Research/GW-Localization-Tiling/repair_frames', '/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames']
@@ -764,4 +734,4 @@ for folder in folders_to_clear:
 
 population = 2
 generations = 1
-ga(region, 8, population, generations, initial_length=6, plot_regions=True, plot_crossover=False)
+final_agent_list = ga(region, 8, population, generations, initial_length=10, plot_regions=True, plot_crossover=False)

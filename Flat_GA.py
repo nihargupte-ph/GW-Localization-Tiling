@@ -247,12 +247,12 @@ class Agent:
         for p in voronoi_polygons(Voronoi(center_points), diameter):
             self.voronoi_list.append(p.intersection(boundary_polygon))
 
-    def plot_centers(self, zorder):
+    def plot_centers(self, zorder, color='k'):
         """ Plots the centers of the circles in black """
         self.update_centers()
 
         for center in self.center_list:
-            plt.scatter(center.x, center.y, c='k', zorder=zorder, s=2)
+            plt.scatter(center.x, center.y, c=color, zorder=zorder, s=2)
 
     def plot_voronoi(self, zorder, alpha):
         """ Plots voronoi diagrams """
@@ -324,7 +324,7 @@ def intersection_area_inv(center_array, region, radius):
 def repair_agent_BFGS(agent, region, plot=False, debug=False, generation=0, agent_number=0):
     """ Given agent uses quasi newton secant update to rearrange circles in agent to cover the region """
 
-    if region.difference(unary_union(agent.circle_list)).area < .01: #Check if we even need to update
+    if region.difference(unary_union(agent.circle_list)).area < .05: #Check if we even need to update
         return True
 
     agent.update_centers()
@@ -375,7 +375,7 @@ def repair_agent_BFGS(agent, region, plot=False, debug=False, generation=0, agen
         plt.savefig("repair_frames/generation_{}/agent_{}/frame_{}".format(generation, agent_number, "BFGS optimized"))
         plt.close()
 
-    if region.difference(unary_union(agent.circle_list)).area < .01: #Precision errors
+    if region.difference(unary_union(agent.circle_list)).area < .05: #Precision errors
         return True
     else:
         return False
@@ -410,11 +410,10 @@ def init_agents(radius, bounding_box, region, length=20):
 
     return [Agent(radius=radius, bounding_box=bounding_box, length=length, region=region) for _ in range(population)]
     
-
 def fitness(agent_list, region, bounding_box, initial_length):
 
-    alpha = 2
-    beta = 1
+    alpha = 2.1
+    beta = .8
     chi = 1
 
     sm = alpha + beta + chi
@@ -428,7 +427,6 @@ def fitness(agent_list, region, bounding_box, initial_length):
 
     return agent_list
 
-
 def selection(agent_list):
 
     agent_list = sorted(
@@ -437,7 +435,6 @@ def selection(agent_list):
     agent_list = agent_list[:int(.8 * len(agent_list))]
 
     return agent_list
-
 
 def crossover(agent_list, region, plot=False, generation=0):
     """ Crossover is determined by mixing voronoi diagrams """
@@ -502,6 +499,7 @@ def crossover(agent_list, region, plot=False, generation=0):
             os.mkdir("/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}/{}".format(generation, i))
 
             plt.figure(figsize=(6,6))
+            plt.axis('off')
             plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
             plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
             plt.plot(*test_polygon.exterior.xy)
@@ -514,31 +512,35 @@ def crossover(agent_list, region, plot=False, generation=0):
             plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
             plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
             plt.plot(*test_polygon.exterior.xy)
+            plt.axis('off')
             parent2.plot_voronoi(2, .3)
             parent2.plot_centers(3)
             plt.savefig("/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}/{}/parent2_voronoi.png".format(generation, i))
             plt.close()
 
+            plt.figure(figsize=(6,6))
+            plt.axis('off')
+            plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
+            plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
+            plt.plot(*test_polygon.exterior.xy)
+            parent1.plot_voronoi(2, .3)
+            parent1.plot_centers(3)
+            parent2.plot_centers(3, color='r')
+            plt.savefig("/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}/{}/parent1_voronoi_parent2_centers.png".format(generation, i))
+            plt.close()
+
+            plt.figure(figsize=(6,6))
+            plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
+            plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
+            plt.plot(*test_polygon.exterior.xy)
+            plt.axis('off')
+            parent2.plot_voronoi(2, .3)
+            parent2.plot_centers(3)
+            parent1.plot_centers(3, color='r')
+            plt.savefig("/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}/{}/parent2_voronoi_parent1_centers.png".format(generation, i))
+            plt.close()
+
             child1, child2 = breed_agents(parent1, parent2)
-
-            plt.figure(figsize=(6,6))
-            plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
-            plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
-            plt.plot(*test_polygon.exterior.xy)
-            child1.plot_voronoi(2, .3)
-            child1.plot_centers(3)
-            plt.savefig("/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}/{}/child1_voronoi.png".format(generation, i))
-            plt.close()
-
-            plt.figure(figsize=(6,6))
-            plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
-            plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
-            plt.plot(*test_polygon.exterior.xy)
-            child2.plot_voronoi(2, .3)
-            child2.plot_centers(3)
-            plt.savefig("/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}/{}/child2_voronoi.png".format(generation, i))
-            plt.close()
-
 
             #Plotting actual agents
             plt.figure(figsize=(6,6))
@@ -564,6 +566,7 @@ def crossover(agent_list, region, plot=False, generation=0):
             plt.figure(figsize=(6,6))
             plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
             plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
+            plt.axis('off')
             plt.plot(*test_polygon.exterior.xy)
             child1.plot_agent(test_polygon, bounding_box)
             child1.plot_centers(3)
@@ -573,23 +576,49 @@ def crossover(agent_list, region, plot=False, generation=0):
             plt.figure(figsize=(6,6))
             plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
             plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
+            plt.axis('off')
             plt.plot(*test_polygon.exterior.xy)
             child2.plot_agent(test_polygon, bounding_box)
             child2.plot_centers(3)
             plt.savefig("/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}/{}/child2.png".format(generation, i))
             plt.close()
 
+            #NOTE JUST TEMPORARLY FIXING AND PLOTTING AGENTS
+
+            repair_agent_BFGS(child1, region)
+            repair_agent_BFGS(child2, region)
+
+            plt.figure(figsize=(6,6))
+            plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
+            plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
+            plt.axis('off')
+            plt.plot(*test_polygon.exterior.xy)
+            child1.plot_agent(test_polygon, bounding_box)
+            child1.plot_centers(3)
+            plt.savefig("/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}/{}/child1_repaired.png".format(generation, i))
+            plt.close()
+
+            plt.figure(figsize=(6,6))
+            plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
+            plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
+            plt.axis('off')
+            plt.plot(*test_polygon.exterior.xy)
+            child2.plot_agent(test_polygon, bounding_box)
+            child2.plot_centers(3)
+            plt.savefig("/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}/{}/child2_repaired.png".format(generation, i))
+            plt.close()
+
     agent_list.extend(offspring)
 
     return agent_list
-
 
 def mutation(agent_list, region):
 
     for agent in agent_list:
 
         if random.uniform(0, 1) <= .2:
-            worst_circle_self = sorted(agent.circle_list, key=lambda x: unary_union(agent.circle_list[:].remove(x)).intersection(x).area)[0] #Finds circle which intersects with itself the most
+            #Finds circle which intersects with itself the most
+            worst_circle_self = sorted(agent.circle_list, key=lambda x: unary_union(removal_copy(agent.circle_list, x)).intersection(x).area)[0]
 
             agent.circle_list.remove(worst_circle_self)
 
@@ -701,10 +730,10 @@ def ga(region, radius, bounding_box, initial_length=100, plot_regions=False, sav
     print("Finished. Total execution time {}".format(time.process_time() - start))
 
 global population
-population = 10
+population = 100
 
 global generations
-generations = 30
+generations = 1
 
 global colors
 colors = ["#ade6e6", "#ade6ad", "#e6ade6", "#e6adad"]
@@ -732,7 +761,7 @@ for folder in folders_to_clear:
         except Exception as e:
             print('Failed to delete %s. Reason: %s' % (file_path, e))
 
-ga(test_polygon, .2, bounding_box, initial_length=18, plot_regions=True, save_agents=False, plot_crossover=False)
+ga(test_polygon, .2, bounding_box, initial_length=20, plot_regions=True, save_agents=False, plot_crossover=True)
 
 #Testing code region
 # filehandler1 = open("/home/n/Documents/Research/GW-Localization-Tiling/saved_agents/generation_0/agent_0.obj", 'rb') 
