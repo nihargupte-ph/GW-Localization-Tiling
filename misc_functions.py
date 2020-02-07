@@ -15,6 +15,7 @@ def get_m(**plot_args):
     
     
     m = Basemap(projection='ortho', resolution='c', lon_0 = -70, lat_0 = 50, **plot_args)
+    m.drawcoastlines()
     #m.bluemarble()
     return m
 
@@ -186,8 +187,8 @@ def generate_random_in_polygon(number, polygon):
 def xyz_to_lon_lat(X, Y, Z):
     """ Takes list of X, Y, and Z coordinates and spits out list of lon lat and rho """
 
-    phi = [math.degrees(np.arctan(y/x))+180 for x, y in zip(X,Y)]
-    theta = [math.degrees(np.arccos(z / math.sqrt((x**2)+(y**2)+(z**2))))+90 for x, y, z in zip(X,Y,Z)]
+    phi = [math.degrees(np.arctan(y/x)) for x, y in zip(X,Y)]
+    theta = [math.degrees(np.arccos(z / math.sqrt((x**2)+(y**2)+(z**2)))) for x, y, z in zip(X,Y,Z)]
     rho = [x**2 + y**2 + z**2 for x, y, z in zip(X,Y,Z)]
 
     return phi, theta, rho
@@ -236,33 +237,27 @@ def convert_fits_xyz(dataset, number, nested=True, nside = None):
     msort = mflat[i]
     mcum = np.cumsum(msort)            
     ind_to_90 = len(mcum[mcum <= 0.9*mcum[-1]])
-    print(ind_to_90)
 
     area_pix = i[:ind_to_90]
-    print(area_pix)
 
     x, y, z = hp.pix2vec(nside,area_pix,nest=nested)
-
     lon, lat, r = xyz_to_lon_lat(x, y, z)
+    plt.plot(lon, lat)
+    plt.show()
 
-    theta, phi = hp.pix2ang(nside, area_pix)
-    ra = np.rad2deg(phi - (math.pi))
-    dec = np.rad2deg(theta - (math.pi/2))
+    ra = np.asarray(lon) + 180
+    dec = 90 - np.asarray(lat)
 
     l = np.zeros(len(m))
     l[area_pix] = 0.00005
 
     hp.orthview(l,nest=True,title='Optimized Coverage', rot=(-70, 0, 0), half_sky=True)	
     plt.show()
-    
+
+    #IF YOU DON"T HAVE BASEMAP COMMENT OUT THESE LINES BELOW
     m = get_m()
-    print(lon, lat)
     x,y = m(lon, lat)
     m.scatter(x,y)
     plt.show()
 
     return ra, dec
-
-dataset = 'design_bns_astro'
-i = 130
-convert_fits_xyz(dataset, i)

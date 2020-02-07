@@ -267,8 +267,8 @@ points = np.asarray([(ra, dec) for ra, dec in zip(ras, decs)])
 hull = ConvexHull(points)
 hull_pts = points[hull.vertices, :]
 hull_ra, hull_dec = zip(*hull_pts)
-region = SphericalPolygon.from_radec(hull_ra, hull_dec)
-
+hull_lon, hull_lat = np.asarray(hull_ra) - 180, 90 - np.asarray(hull_dec)
+region = SphericalPolygon.from_radec(hull_lon, hull_lat)
 
 intial_guess = 6
 for length in range(intial_guess, 0, -1):
@@ -278,14 +278,19 @@ for length in range(intial_guess, 0, -1):
 
     #Temporarry NOTE
     m=get_m()
-    region.draw(m)
+    radec = list(region.to_radec())
+    lons, lats = radec[0][0], radec[0][1]
+    x, y = m(lons, lats)
+    m.plot(x,y, c='b')
+
     for circle in agent.circle_list:
-        circle.draw(m)
+        radec = list(circle.to_radec())
+        lons, lats = radec[0][0], radec[0][1]
+        x, y = m(lons, lats)
+        m.plot(x,y, c='r')
     plt.savefig('LIGO_Plots/fits_number_{}_length_{}_basemap'.format(i, length))
     plt.close()
 
-    # ligo_centers = [(lon, 90 - lat) for lon, lat in agent.center_list]
-    # print(ligo_centers)
-    print(agent.center_list)
-    plot_ligo('data/{}/{}.fits'.format(dataset, i), np.asarray(agent.center_list), "LIGO_Plots/fits_number_{}_length_{}".format(i, length))
+    ligo_centers = [(a, 90 - b) for a, b in agent.center_list]
+    plot_ligo('data/{}/{}.fits'.format(dataset, i), np.asarray(ligo_centers), "LIGO_Plots/fits_number_{}_length_{}".format(i, length))
     plt.close()
