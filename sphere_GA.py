@@ -19,7 +19,7 @@ import os
 import time
 import warnings
 
-warnings.filterwarnings("ignore") #If you want to debug remove this
+#warnings.filterwarnings("ignore") #If you want to debug remove this
 
 
 def get_m(**plot_args):

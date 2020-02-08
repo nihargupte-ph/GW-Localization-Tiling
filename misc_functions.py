@@ -13,18 +13,19 @@ from collections import defaultdict
 def get_m(**plot_args):
     """ Given plot args returns a basemap "axis" with the proper plot args. Edit this function if you want different maps """
     
-    
     m = Basemap(projection='ortho', resolution='c', lon_0 = -70, lat_0 = 50, **plot_args)
     m.drawcoastlines()
-    #m.bluemarble()
     return m
 
 def diff(li1, li2): 
+
+    """ Helper function which returns the difference between two lists """
+
     li_dif = [i for i in li1 + li2 if i not in li1 or i not in li2] 
     return li_dif
 
 def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█', printEnd = "\r"):
-    """
+    """ 
     Call in a loop to create terminal progress bar
     @params:
         iteration   - Required  : current iteration (Int)
@@ -50,6 +51,7 @@ def grouper(n, iterable, fillvalue=None):
     return list(zip_longest(fillvalue=fillvalue, *args))
 
 def around(coords, precision=5):
+    """ Precision errors in shapely objections because of curled up points """
     result = []
     try:
         return round(coords, precision)
@@ -174,6 +176,9 @@ def clip(x, min, max) :
     else :             return x
 
 def generate_random_in_polygon(number, polygon):
+
+    """ Given a number of points generate that many random points inside a polygon """
+
     list_of_points = []
     minx, miny, maxx, maxy = polygon.bounds
     counter = 0
@@ -212,9 +217,6 @@ def removal_copy(lst, x):
 
     return ret
 
-
-import matplotlib.pyplot as plt
-
 def convert_fits_xyz(dataset, number, nested=True, nside = None):
 
     """ Given a fits file converts into xyz point """
@@ -242,8 +244,7 @@ def convert_fits_xyz(dataset, number, nested=True, nside = None):
 
     x, y, z = hp.pix2vec(nside,area_pix,nest=nested)
     lon, lat, r = xyz_to_lon_lat(x, y, z)
-    plt.plot(lon, lat)
-    plt.show()
+
 
     ra = np.asarray(lon) + 180
     dec = 90 - np.asarray(lat)

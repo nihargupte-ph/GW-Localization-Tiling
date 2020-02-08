@@ -502,7 +502,7 @@ def crossover(agent_list, region, plot=False, generation=0):
             plt.axis('off')
             plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
             plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
-            plt.plot(*test_polygon.exterior.xy)
+            plt.plot(*region.exterior.xy)
             parent1.plot_voronoi(2, .3)
             parent1.plot_centers(3)
             plt.savefig("/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}/{}/parent1_voronoi.png".format(generation, i))
@@ -511,7 +511,7 @@ def crossover(agent_list, region, plot=False, generation=0):
             plt.figure(figsize=(6,6))
             plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
             plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
-            plt.plot(*test_polygon.exterior.xy)
+            plt.plot(*region.exterior.xy)
             plt.axis('off')
             parent2.plot_voronoi(2, .3)
             parent2.plot_centers(3)
@@ -522,7 +522,7 @@ def crossover(agent_list, region, plot=False, generation=0):
             plt.axis('off')
             plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
             plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
-            plt.plot(*test_polygon.exterior.xy)
+            plt.plot(*region.exterior.xy)
             parent1.plot_voronoi(2, .3)
             parent1.plot_centers(3)
             parent2.plot_centers(3, color='r')
@@ -532,7 +532,7 @@ def crossover(agent_list, region, plot=False, generation=0):
             plt.figure(figsize=(6,6))
             plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
             plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
-            plt.plot(*test_polygon.exterior.xy)
+            plt.plot(*region.exterior.xy)
             plt.axis('off')
             parent2.plot_voronoi(2, .3)
             parent2.plot_centers(3)
@@ -546,8 +546,8 @@ def crossover(agent_list, region, plot=False, generation=0):
             plt.figure(figsize=(6,6))
             plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
             plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
-            plt.plot(*test_polygon.exterior.xy)
-            parent1.plot_agent(test_polygon, bounding_box)
+            plt.plot(*region.exterior.xy)
+            parent1.plot_agent(region, bounding_box)
             parent1.plot_centers(3)
             plt.savefig("/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}/{}/parent1.png".format(generation, i))
             plt.close()
@@ -555,8 +555,8 @@ def crossover(agent_list, region, plot=False, generation=0):
             plt.figure(figsize=(6,6))
             plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
             plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
-            plt.plot(*test_polygon.exterior.xy)
-            parent2.plot_agent(test_polygon, bounding_box)
+            plt.plot(*region.exterior.xy)
+            parent2.plot_agent(region, bounding_box)
             parent2.plot_centers(3)
             plt.savefig("/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}/{}/parent2.png".format(generation, i))
             plt.close()
@@ -567,8 +567,8 @@ def crossover(agent_list, region, plot=False, generation=0):
             plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
             plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
             plt.axis('off')
-            plt.plot(*test_polygon.exterior.xy)
-            child1.plot_agent(test_polygon, bounding_box)
+            plt.plot(*region.exterior.xy)
+            child1.plot_agent(region, bounding_box)
             child1.plot_centers(3)
             plt.savefig("/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}/{}/child1.png".format(generation, i))
             plt.close()
@@ -577,8 +577,8 @@ def crossover(agent_list, region, plot=False, generation=0):
             plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
             plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
             plt.axis('off')
-            plt.plot(*test_polygon.exterior.xy)
-            child2.plot_agent(test_polygon, bounding_box)
+            plt.plot(*region.exterior.xy)
+            child2.plot_agent(region, bounding_box)
             child2.plot_centers(3)
             plt.savefig("/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}/{}/child2.png".format(generation, i))
             plt.close()
@@ -592,8 +592,8 @@ def crossover(agent_list, region, plot=False, generation=0):
             plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
             plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
             plt.axis('off')
-            plt.plot(*test_polygon.exterior.xy)
-            child1.plot_agent(test_polygon, bounding_box)
+            plt.plot(*region.exterior.xy)
+            child1.plot_agent(region, bounding_box)
             child1.plot_centers(3)
             plt.savefig("/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}/{}/child1_repaired.png".format(generation, i))
             plt.close()
@@ -602,8 +602,8 @@ def crossover(agent_list, region, plot=False, generation=0):
             plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
             plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
             plt.axis('off')
-            plt.plot(*test_polygon.exterior.xy)
-            child2.plot_agent(test_polygon, bounding_box)
+            plt.plot(*region.exterior.xy)
+            child2.plot_agent(region, bounding_box)
             child2.plot_centers(3)
             plt.savefig("/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}/{}/child2_repaired.png".format(generation, i))
             plt.close()
@@ -733,7 +733,7 @@ global population
 population = 100
 
 global generations
-generations = 1
+generations = 10
 
 global colors
 colors = ["#ade6e6", "#ade6ad", "#e6ade6", "#e6adad"]
@@ -743,10 +743,10 @@ bounding_box = {"bottom left": (-2, -2),
                 "top right": (2, 2),
                 "top left": (-2, 2)}
 
-test_polygon = geometry.Polygon([(-.6, -.6), (.6, -.6), (.6, .6), (-.6, .6)])
+#test_polygon = geometry.Polygon([(-.6, -.6), (.6, -.6), (.6, .6), (-.6, .6)])
 
-# random_polygon_pts = generatePolygon(ctrX=0, ctrY=0, aveRadius=150, irregularity=0.35, spikeyness=0.2, numVerts=16 )
-# random_polygon = geometry.Polygon(random_polygon_pts)
+random_polygon_pts = generatePolygon(ctrX=0, ctrY=0, aveRadius=50, irregularity=0.35, spikeyness=0.2, numVerts=10 )
+random_polygon = geometry.Polygon(random_polygon_pts)
 
 # Clearing folder before we add new frames
 folders_to_clear = ['/home/n/Documents/Research/GW-Localization-Tiling/frames', '/home/n/Documents/Research/GW-Localization-Tiling/repair_frames', '/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames']
@@ -761,21 +761,4 @@ for folder in folders_to_clear:
         except Exception as e:
             print('Failed to delete %s. Reason: %s' % (file_path, e))
 
-ga(test_polygon, .2, bounding_box, initial_length=20, plot_regions=True, save_agents=False, plot_crossover=True)
-
-#Testing code region
-# filehandler1 = open("/home/n/Documents/Research/GW-Localization-Tiling/saved_agents/generation_0/agent_0.obj", 'rb') 
-# filehandler2 = open("/home/n/Documents/Research/GW-Localization-Tiling/saved_agents/generation_0/agent_1.obj", 'rb') 
-# parent1 = pickle.load(filehandler1)
-# parent2 = pickle.load(filehandler2)
-
-#agent = Agent(radius=.2, bounding_box=bounding_box, length=10)
-#tmp = repair_agent_skewer(agent, test_polygon, plot=True)
-# tmp = repair_agent_BFGS(agent, test_polygon, debug=False, plot=True)
-# print(tmp)
-# plt.figure(figsize=(6,6))
-# plt.xlim([bounding_box["bottom left"][0], bounding_box["bottom right"][0]])
-# plt.ylim([bounding_box["bottom left"][1], bounding_box["top left"][1]])
-# agent.plot_agent(test_polygon, bounding_box)
-# plt.plot(*test_polygon.exterior.xy)
-# plt.show()
+ga(random_polygon, .2, bounding_box, initial_length=20, plot_regions=True, save_agents=False, plot_crossover=False)
