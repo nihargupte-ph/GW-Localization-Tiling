@@ -7,7 +7,7 @@ from scipy.spatial import ConvexHull
 from shapely.ops import unary_union
 from spherical_geometry.polygon import SphericalPolygon
 from misc_functions import *
-from LIGO_Plotting import *
+import matplotlib.pyplot as plt
 
 def get_circle(phi, theta, fov, step=16):
     """ Returns SphericalPolygon given FOV and center of the polygon """
@@ -256,41 +256,37 @@ fov_diameter = 8 # FOV diameter in degrees
 i = 130
 fov = 8
 
-#We need to cluster the points before we convex hull
-# X, Y, Z = convert_fits_xyz(dataset, i)
-# lons, lats, r = xyz_to_lon_lat(X, Y, Z)
-# lons = [lon - 180 for lon in lons]
-# lats = [lat - 90 for lat in lats]
-ras, decs = convert_fits_xyz(dataset, i)
-points = np.asarray([(ra, dec) for ra, dec in zip(ras, decs)])
 
-hull = ConvexHull(points)
-hull_pts = points[hull.vertices, :]
-hull_ra, hull_dec = zip(*hull_pts)
-hull_lon, hull_lat = np.asarray(hull_ra) - 180, 90 - np.asarray(hull_dec)
-region = SphericalPolygon.from_radec(hull_lon, hull_lat)
+area_list = []
+for i in range(0, 100):
+    X, Y, Z = convert_fits_xyz(dataset, i)
+    inside_point = X[1], Y[1], Z[1] #A point inside the region
+
+    #We need to cluster the points before we convex hull
+    region = SphericalPolygon.convex_hull(list(zip(X,Y,Z)))
+
+    area_list.append(region.area())
+print(area_list)
+#If the regular SphericalPolygon convex hull is not working, use a projected convex hull as follows:
+# ras, decs = convert_fits_xyz(dataset, i)
+# points = np.asarray([(ra, dec) for ra, dec in zip(ras, decs)])
+# hull = ConvexHull(points)
+# hull_pts = points[hull.vertices, :]
+# hull_ra, hull_dec = zip(*hull_pts)
+# hull_lon, hull_lat = np.asarray(hull_ra) - 180, 90 - np.asarray(hull_dec)
+# region = SphericalPolygon.from_radec(hull_lon, hull_lat)
 
 intial_guess = 6
-for length in range(intial_guess, 0, -1):
+max_circles = 100
+tmp = []
+for length in range(intial_guess, max_circles):
     agent = Agent(fov=fov, length=length, region=region)
 
     success = repair_agent_BFGS(agent, region)
+    if success:
+        tmp.append(length)
+        break
 
-    #Temporarry NOTE
-    m=get_m()
-    radec = list(region.to_radec())
-    lons, lats = radec[0][0], radec[0][1]
-    x, y = m(lons, lats)
-    m.plot(x,y, c='b')
+    
 
-    for circle in agent.circle_list:
-        radec = list(circle.to_radec())
-        lons, lats = radec[0][0], radec[0][1]
-        x, y = m(lons, lats)
-        m.plot(x,y, c='r')
-    plt.savefig('LIGO_Plots/fits_number_{}_length_{}_basemap'.format(i, length))
-    plt.close()
-
-    ligo_centers = [(a, 90 - b) for a, b in agent.center_list]
-    plot_ligo('data/{}/{}.fits'.format(dataset, i), np.asarray(ligo_centers), "LIGO_Plots/fits_number_{}_length_{}".format(i, length))
-    plt.close()
+    plt.show()

@@ -249,16 +249,4 @@ def convert_fits_xyz(dataset, number, nested=True, nside = None):
     ra = np.asarray(lon) + 180
     dec = 90 - np.asarray(lat)
 
-    l = np.zeros(len(m))
-    l[area_pix] = 0.00005
-
-    hp.orthview(l,nest=True,title='Optimized Coverage', rot=(-70, 0, 0), half_sky=True)	
-    plt.show()
-
-    #IF YOU DON"T HAVE BASEMAP COMMENT OUT THESE LINES BELOW
-    m = get_m()
-    x,y = m(lon, lat)
-    m.scatter(x,y)
-    plt.show()
-
-    return ra, dec
+    return x, y, z

@@ -324,7 +324,7 @@ def intersection_area_inv(center_array, region, radius):
 def repair_agent_BFGS(agent, region, plot=False, debug=False, generation=0, agent_number=0):
     """ Given agent uses quasi newton secant update to rearrange circles in agent to cover the region """
 
-    if region.difference(unary_union(agent.circle_list)).area < .05: #Check if we even need to update
+    if region.difference(unary_union(agent.circle_list)).area < .01: #Check if we even need to update
         return True
 
     agent.update_centers()
@@ -375,7 +375,7 @@ def repair_agent_BFGS(agent, region, plot=False, debug=False, generation=0, agen
         plt.savefig("repair_frames/generation_{}/agent_{}/frame_{}".format(generation, agent_number, "BFGS optimized"))
         plt.close()
 
-    if region.difference(unary_union(agent.circle_list)).area < .05: #Precision errors
+    if region.difference(unary_union(agent.circle_list)).area < .01: #Precision errors
         return True
     else:
         return False
@@ -762,4 +762,4 @@ for folder in folders_to_clear:
         except Exception as e:
             print('Failed to delete %s. Reason: %s' % (file_path, e))
 
-ga(random_polygon, .2, bounding_box, initial_length=20, plot_regions=True, save_agents=False, plot_crossover=False)
+ga(random_polygon, .25, bounding_box, initial_length=10, plot_regions=True, save_agents=False, plot_crossover=False)
