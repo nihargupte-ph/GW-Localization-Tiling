@@ -419,6 +419,7 @@ def fitness(agent_list, region, bounding_box, initial_length):
     sm = alpha + beta + chi
 
     for agent in agent_list:
+        agent.update_agent()
 
         _, _, frac_overlap, frac_nonoverlap = intersection_region(region, agent.circle_list, bounding_box)
         _, frac_self_intersection = double_intersection(agent.circle_list)
@@ -730,7 +731,7 @@ def ga(region, radius, bounding_box, initial_length=100, plot_regions=False, sav
     print("Finished. Total execution time {}".format(time.process_time() - start))
 
 global population
-population = 100
+population = 10
 
 global generations
 generations = 10
