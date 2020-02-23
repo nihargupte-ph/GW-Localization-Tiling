@@ -237,7 +237,6 @@ class gberg_comb:
         p12 = self.slerp(s1,s2,l2s)
         return self.slerp(p12,s3,l3)
 
-    
         
     def map_comb(self,tri_inds,vertices = None):
         """
@@ -258,8 +257,6 @@ class gberg_comb:
                 point_vecs.append(vec)
                 
         return  np.unique(np.array(point_vecs),axis=0)
-            
-        
 
     def make_sample(self, coord, res=0.5, itr=8):
         """
@@ -344,114 +341,115 @@ fov_radius = fov_diameter / 2
 #data_file.write('coinc_event_id\tpointings\n')
 
 #Open sample file, tested on 100
-i = 130
+i = 9
 
 tmp = []
 
-for i in range(0, 100):
-    m, metadata = fits.read_sky_map('data/' + dataset + '/' + str(i) + '.fits', nest=None)  
 
-    print('Map:\tdata/' + dataset + '/' + str(i) + '.fits\n')
-    print('\tData loading time:\t%0.4f' % (time.time()-readTime))             
-    ############################################################################
+m, metadata = fits.read_sky_map('data/' + dataset + '/' + str(i) + '.fits', nest=None)  
 
-    initTime = time.time()
-    region90 = area(m,fov_radius,dil=0.99,deg_fact=8)
-    comb     = gberg_comb(region90.nside,fov_radius)
-    print('\tInitializing time:\t%0.4f' % (time.time()-initTime))
+print('Map:\tdata/' + dataset + '/' + str(i) + '.fits\n')
+print('\tData loading time:\t%0.4f' % (time.time()-readTime))             
+############################################################################
 
-    print('\tArea size:\t\t%d pixels\n' %(len(region90.area_pix)))
+initTime = time.time()
+region90 = area(m,fov_radius,dil=0.99,deg_fact=8)
+comb     = gberg_comb(region90.nside,fov_radius)
+print('\tInitializing time:\t%0.4f' % (time.time()-initTime))
 
-    stime = time.time()
-    pointings = comb.map_comb(comb.tri_ind)
-    print('\tTime generating comb:\t%0.4f' % (time.time()-stime))
+print('\tArea size:\t\t%d pixels\n' %(len(region90.area_pix)))
 
-    stime = time.time()
-    covArr    = region90.find_covering(pointings)
-    print('\tTime finding covArr:\t%0.4f' % (time.time()-stime))
+stime = time.time()
+pointings = comb.map_comb(comb.tri_ind)
+print('\tTime generating comb:\t%0.4f' % (time.time()-stime))
 
-    stime = time.time()
-    null = comb.rotate(comb.vertices,region90.max_prob,np.cos(np.pi/2))
-    print('\tTime rotating vertices:\t%0.4f\n' % (time.time()-stime))
+stime = time.time()
+covArr    = region90.find_covering(pointings)
+print('\tTime finding covArr:\t%0.4f' % (time.time()-stime))
 
-
-    init_score = len(covArr)
+stime = time.time()
+null = comb.rotate(comb.vertices,region90.max_prob,np.cos(np.pi/2))
+print('\tTime rotating vertices:\t%0.4f\n' % (time.time()-stime))
 
 
-    #New routine needs to rotate vertices to each angle, map new points, then
-    # rotate to each of the sites and record the number covering
-    # Faster for the routine to map new points to the comb than to 
-    # rotate all the given points, minimize number of points given to rotate
-
-    # Routine to test sample sites, picks angles at 10 deg increments from 0 - 60
-    # rotates between these angles about the max_prob pixel in the area
-    # At each of these positions, rotates between 224 sample sites in hexagonal
-    # arrangement, finds covering for each
-    # returns list with the best scores, index into cos_psi/axis_vec, and the 
-    # major angle value
-
-    ttime = time.time()
-
-    cos_psi_arr, axis_vec_arr = comb.make_sample(region90.max_prob,res=1.33,itr=3)
-
-    best_scores = []
-    best_points = []
-    psi2 = 0
-
-    stime = time.time()
-
-    vert = comb.rotate(comb.vertices,region90.max_prob,np.cos(psi2))
-
-    init_points = region90.find_covering(comb.map_comb(comb.tri_ind))
-    scoreList = [len(init_points)]
-    pointList = [init_points]
-    for cos_psi, axis_vec in zip(cos_psi_arr,axis_vec_arr):
-
-        rotPoints = comb.rotate(vert,axis_vec,cos_psi)
-        points = comb.map_comb(comb.tri_ind,vertices = rotPoints)
-        trans_points = region90.find_covering(points)
-        scoreList.append(len(trans_points)), pointList.append(trans_points)
-
-    bestscore = min(scoreList)
-    best_scores.append(bestscore), best_points.append(pointList[scoreList.index(bestscore)])
-    print('\tLoop time:\t\t%0.4f' % (time.time() - stime))   
+init_score = len(covArr)
 
 
-    final_best_score = min(best_scores)
+#New routine needs to rotate vertices to each angle, map new points, then
+# rotate to each of the sites and record the number covering
+# Faster for the routine to map new points to the comb than to 
+# rotate all the given points, minimize number of points given to rotate
 
-    tmp.append(final_best_score)
+# Routine to test sample sites, picks angles at 10 deg increments from 0 - 60
+# rotates between these angles about the max_prob pixel in the area
+# At each of these positions, rotates between 224 sample sites in hexagonal
+# arrangement, finds covering for each
+# returns list with the best scores, index into cos_psi/axis_vec, and the 
+# major angle value
 
-    index = best_scores.index(final_best_score)
-    final_pointings = best_points[index]
-    print('\n\tFinal optimizing time:\t%0.4f\n\tMinimum pointings:\t%d' % ((time.time() - ttime),final_best_score))
-    print('\tImprovement:\t\t%d pointings' % (init_score-final_best_score))
-    print('\tTotal elapsed time:\t%0.4f\n' % (time.time()-readTime))
+ttime = time.time()
+
+cos_psi_arr, axis_vec_arr = comb.make_sample(region90.max_prob,res=1.33,itr=3)
+
+best_scores = []
+best_points = []
+psi2 = 0
+
+stime = time.time()
+
+vert = comb.rotate(comb.vertices,region90.max_prob,np.cos(psi2))
+
+init_points = region90.find_covering(comb.map_comb(comb.tri_ind))
+scoreList = [len(init_points)]
+pointList = [init_points]
+for cos_psi, axis_vec in zip(cos_psi_arr,axis_vec_arr):
+
+    rotPoints = comb.rotate(vert,axis_vec,cos_psi)
+    points = comb.map_comb(comb.tri_ind,vertices = rotPoints)
+    trans_points = region90.find_covering(points)
+    scoreList.append(len(trans_points)), pointList.append(trans_points)
+
+bestscore = min(scoreList)
+best_scores.append(bestscore), best_points.append(pointList[scoreList.index(bestscore)])
+print('\tLoop time:\t\t%0.4f' % (time.time() - stime))   
 
 
-    # Debug routine, produces mollweide view of final array
-    init_pix = draw_circles(region90.nside,covArr,fov_radius)
-    opt_pix = draw_circles(region90.nside,final_pointings, fov_radius)     
+final_best_score = min(best_scores)
 
-    n = np.zeros(len(m))
-    l = np.zeros(len(m))
-    n[region90.area_pix] = 0.00005
-    l[region90.area_pix] = 0.00005
+tmp.append(final_best_score)
 
-    l[init_pix] = 0.0001
-    n[opt_pix] = 0.0001
+index = best_scores.index(final_best_score)
+final_pointings = best_points[index]
+print(final_pointings)
+print('\n\tFinal optimizing time:\t%0.4f\n\tMinimum pointings:\t%d' % ((time.time() - ttime),final_best_score))
+print('\tImprovement:\t\t%d pointings' % (init_score-final_best_score))
+print('\tTotal elapsed time:\t%0.4f\n' % (time.time()-readTime))
 
-    print(region90.area_pix)
-    print()
-    print(n)
 
-print(tmp)
+# Debug routine, produces mollweide view of final array
+init_pix = draw_circles(region90.nside,covArr,fov_radius)
+opt_pix = draw_circles(region90.nside,final_pointings, fov_radius)     
+
+n = np.zeros(len(m))
+l = np.zeros(len(m))
+n[region90.area_pix] = 0.00005
+l[region90.area_pix] = 0.00005
+
+l[init_pix] = 0.0001
+n[opt_pix] = 0.0001
+
+print(region90.area_pix)
+print()
+print(n)
 
 #rot=(70, -20, 0)
 
-hp.orthview(n,nest=True,title='Optimized Coverage', rot=(-70, 0, 0), half_sky=True)	
+#hp.orthview(n,nest=True,title='Optimized Coverage', rot=(-70, 0, 0), half_sky=True)	
+hp.mollview(n,nest=True,title='Optimized Coverage')
 #hp.mollview(l,nest=True,title='Initial Coverage')
 
-#plt.show()
+import matplotlib.pyplot as plt
+plt.show()
 
 #hp.cartview(testpix,nest=True)
 
