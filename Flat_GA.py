@@ -18,6 +18,9 @@ import fiona
 import time
 from scipy.spatial import ConvexHull
 
+global cwd
+cwd = os.getcwd()
+
 
 def get_circle(radius, center, step=100):
     """ Returns shapely polygon given radius and center """
@@ -226,23 +229,24 @@ class Agent:
             else:
                 raise Exception("Not poygon or multipolygon")
 
-            if isinstance(empty_region, geometry.MultiPolygon):
-                for p4 in empty_region:
-                    x2, y2 = p4.exterior.xy
+            # Used to plot black for regions which aren't covered but as default its white you can change if you want
+            # if isinstance(empty_region, geometry.MultiPolygon):
+            #     for p4 in empty_region:
+            #         x2, y2 = p4.exterior.xy
 
-                    if ax == None:
-                        plt.fill(x2, y2, c="k", zorder=zorder - 0.3)
-                    else:
-                        ax.fill(x2, y2, c="k", zorder=zorder - 0.3)
+            #         if ax == None:
+            #             plt.fill(x2, y2, c="k", zorder=zorder - 0.3)
+            #         else:
+            #             ax.fill(x2, y2, c="k", zorder=zorder - 0.3)
 
-            elif isinstance(empty_region, geometry.Polygon):
-                p4 = empty_region
-                x2, y2 = p4.exterior.xy
+            # elif isinstance(empty_region, geometry.Polygon):
+            # p4 = empty_region
+            # x2, y2 = p4.exterior.xy
 
-                if ax == None:
-                    plt.fill(x2, y2, c="k", zorder=zorder - 0.3)
-                else:
-                    ax.fill(x2, y2, c="k", zorder=zorder - 0.3)
+            # if ax == None:
+            #     plt.fill(x2, y2, c="k", zorder=zorder - 0.3)
+            # else:
+            #     ax.fill(x2, y2, c="k", zorder=zorder - 0.3)
 
         else:
             if ax == None:
@@ -491,7 +495,7 @@ def repair_agents(agent_list, region, plot=False, generation=0, guess=False):
     if plot == True:
         if generation == 0:
             # Clearing folder before we add new frames
-            folder = "/home/n/Documents/Research/GW-Localization-Tiling/repair_frames/"
+            folder = "{}/repair_frames/".format(cwd)
             for filename in os.listdir(folder):
                 file_path = os.path.join(folder, filename)
                 try:
@@ -501,11 +505,7 @@ def repair_agents(agent_list, region, plot=False, generation=0, guess=False):
                         shutil.rmtree(file_path)
                 except Exception as e:
                     print("Failed to delete %s. Reason: %s" % (file_path, e))
-        os.mkdir(
-            "/home/n/Documents/Research/GW-Localization-Tiling/repair_frames/generation_{}".format(
-                generation
-            )
-        )
+        os.mkdir("{}/repair_frames/generation_{}".format(cwd, generation))
     repaired_agent_list = []
     for i, agent in enumerate(agent_list):
         printProgressBar(i, len(agent_list))
@@ -628,11 +628,7 @@ def crossover(agent_list, region, plot=False, generation=0):
         offspring.append(child2)
 
         if plot:
-            os.mkdir(
-                "/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}/{}".format(
-                    generation, i
-                )
-            )
+            os.mkdir("{}/crossover_frames/generation_{}/{}".format(cwd, generation, i))
 
             plt.figure(figsize=(6, 6))
             plt.axis("off")
@@ -642,8 +638,8 @@ def crossover(agent_list, region, plot=False, generation=0):
             parent1.plot_voronoi(2, 0.3)
             parent1.plot_centers(3)
             plt.savefig(
-                "/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}/{}/parent1_voronoi.png".format(
-                    generation, i
+                "{}/crossover_frames/generation_{}/{}/parent1_voronoi.png".format(
+                    cwd, generation, i
                 )
             )
             plt.close()
@@ -656,8 +652,8 @@ def crossover(agent_list, region, plot=False, generation=0):
             parent2.plot_voronoi(2, 0.3)
             parent2.plot_centers(3)
             plt.savefig(
-                "/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}/{}/parent2_voronoi.png".format(
-                    generation, i
+                "{}/crossover_frames/generation_{}/{}/parent2_voronoi.png".format(
+                    cwd, generation, i
                 )
             )
             plt.close()
@@ -671,8 +667,8 @@ def crossover(agent_list, region, plot=False, generation=0):
             parent1.plot_centers(3)
             parent2.plot_centers(3, color="r")
             plt.savefig(
-                "/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}/{}/parent1_voronoi_parent2_centers.png".format(
-                    generation, i
+                "{}/crossover_frames/generation_{}/{}/parent1_voronoi_parent2_centers.png".format(
+                    cwd, generation, i
                 )
             )
             plt.close()
@@ -686,8 +682,8 @@ def crossover(agent_list, region, plot=False, generation=0):
             parent2.plot_centers(3)
             parent1.plot_centers(3, color="r")
             plt.savefig(
-                "/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}/{}/parent2_voronoi_parent1_centers.png".format(
-                    generation, i
+                "{}/crossover_frames/generation_{}/{}/parent2_voronoi_parent1_centers.png".format(
+                    cwd, generation, i
                 )
             )
             plt.close()
@@ -702,8 +698,8 @@ def crossover(agent_list, region, plot=False, generation=0):
             parent1.plot_agent(region, bounding_box)
             parent1.plot_centers(3)
             plt.savefig(
-                "/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}/{}/parent1.png".format(
-                    generation, i
+                "{}/crossover_frames/generation_{}/{}/parent1.png".format(
+                    cwd, generation, i
                 )
             )
             plt.close()
@@ -715,8 +711,8 @@ def crossover(agent_list, region, plot=False, generation=0):
             parent2.plot_agent(region, bounding_box)
             parent2.plot_centers(3)
             plt.savefig(
-                "/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}/{}/parent2.png".format(
-                    generation, i
+                "{}/crossover_frames/generation_{}/{}/parent2.png".format(
+                    cwd, generation, i
                 )
             )
             plt.close()
@@ -731,8 +727,8 @@ def crossover(agent_list, region, plot=False, generation=0):
             child1.plot_agent(region, bounding_box)
             child1.plot_centers(3)
             plt.savefig(
-                "/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}/{}/child1.png".format(
-                    generation, i
+                "{}/crossover_frames/generation_{}/{}/child1.png".format(
+                    cwd, generation, i
                 )
             )
             plt.close()
@@ -745,9 +741,7 @@ def crossover(agent_list, region, plot=False, generation=0):
             child2.plot_agent(region, bounding_box)
             child2.plot_centers(3)
             plt.savefig(
-                "/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}/{}/child2.png".format(
-                    generation, i
-                )
+                "/crossover_frames/generation_{}/{}/child2.png".format(generation, i)
             )
             plt.close()
 
@@ -764,8 +758,8 @@ def crossover(agent_list, region, plot=False, generation=0):
             child1.plot_agent(region, bounding_box)
             child1.plot_centers(3)
             plt.savefig(
-                "/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}/{}/child1_repaired.png".format(
-                    generation, i
+                "{}/crossover_frames/generation_{}/{}/child1_repaired.png".format(
+                    cwd, generation, i
                 )
             )
             plt.close()
@@ -778,8 +772,8 @@ def crossover(agent_list, region, plot=False, generation=0):
             child2.plot_agent(region, bounding_box)
             child2.plot_centers(3)
             plt.savefig(
-                "/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}/{}/child2_repaired.png".format(
-                    generation, i
+                "{}/crossover_frames/generation_{}/{}/child2_repaired.png".format(
+                    cwd, generation, i
                 )
             )
             plt.close()
@@ -855,14 +849,10 @@ def ga(
                 agent_list, region, plot=plot_regions, generation=generation, guess=True
             )
             if save_agents:
-                os.mkdir(
-                    "/home/n/Documents/Research/GW-Localization-Tiling/saved_agents/generation_{}".format(
-                        generation
-                    )
-                )
+                os.mkdir("{}/saved_agents/generation_{}".format(cwd, generation))
                 for i, agent in enumerate(agent_list):
                     with open(
-                        "/home/n/Documents/Research/GW-Localization-Tiling/saved_agents/generation_{}/agent_{}.obj".format(
+                        "{}/saved_agents/generation_{}/agent_{}.obj".format(
                             generation, i
                         ),
                         "wb",
@@ -891,11 +881,7 @@ def ga(
         agent_list.sort(key=lambda x: x.fitness, reverse=True)
 
         # Creating folder
-        os.mkdir(
-            "/home/n/Documents/Research/GW-Localization-Tiling/frames/generation_{}".format(
-                generation
-            )
-        )
+        os.mkdir("{}/frames/generation_{}".format(cwd, generation))
 
         for i, agent in enumerate(agent_list):
             plt.figure(figsize=(6, 6))
@@ -915,11 +901,7 @@ def ga(
 
         before = time.process_time()
         print("Beginning crossover")
-        os.mkdir(
-            "/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames/generation_{}".format(
-                generation
-            )
-        )
+        os.mkdir("{}/crossover_frames/generation_{}".format(cwd, generation))
         agent_list = crossover(
             agent_list, region, plot=plot_crossover, generation=generation
         )
@@ -939,15 +921,11 @@ def ga(
                 agent_list, region, plot=plot_regions, generation=generation
             )
             if save_agents:
-                os.mkdir(
-                    "/home/n/Documents/Research/GW-Localization-Tiling/saved_agents/generation_{}".format(
-                        generation
-                    )
-                )
+                os.mkdir("{}/saved_agents/generation_{}".format(cwd, generation))
                 for i, agent in enumerate(agent_list):
                     with open(
-                        "/home/n/Documents/Research/GW-Localization-Tiling/saved_agents/generation_{}/agent_{}.obj".format(
-                            generation, i
+                        "{}/saved_agents/generation_{}/agent_{}.obj".format(
+                            cwd, generation, i
                         ),
                         "wb",
                     ) as output:
@@ -998,9 +976,9 @@ random_polygon = geometry.Polygon(random_polygon_pts)
 
 # Clearing folder before we add new frames
 folders_to_clear = [
-    "/home/n/Documents/Research/GW-Localization-Tiling/frames",
-    "/home/n/Documents/Research/GW-Localization-Tiling/repair_frames",
-    "/home/n/Documents/Research/GW-Localization-Tiling/crossover_frames",
+    "{}/frames".format(cwd),
+    "{}/repair_frames".format(cwd),
+    "{}/crossover_frames".format(cwd),
 ]
 for folder in folders_to_clear:
     for filename in os.listdir(folder):

@@ -7,24 +7,37 @@ from ligo.skymap.io import fits
 from ligo.skymap.postprocess import find_greedy_credible_levels
 import healpy as hp
 import math
+
 from mpl_toolkits.basemap import Basemap
 from collections import defaultdict
 
+
 def get_m(**plot_args):
     """ Given plot args returns a basemap "axis" with the proper plot args. Edit this function if you want different maps """
-    
-    m = Basemap(projection='ortho', resolution='c', lon_0 = -70, lat_0 = 50, **plot_args)
+
+    m = Basemap(projection="ortho", resolution="c", lon_0=-70, lat_0=50, **plot_args)
     m.drawcoastlines()
     return m
 
-def diff(li1, li2): 
+
+def diff(li1, li2):
 
     """ Helper function which returns the difference between two lists """
 
-    li_dif = [i for i in li1 + li2 if i not in li1 or i not in li2] 
+    li_dif = [i for i in li1 + li2 if i not in li1 or i not in li2]
     return li_dif
 
-def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█', printEnd = "\r"):
+
+def printProgressBar(
+    iteration,
+    total,
+    prefix="",
+    suffix="",
+    decimals=1,
+    length=100,
+    fill="█",
+    printEnd="\r",
+):
     """ 
     Call in a loop to create terminal progress bar
     @params:
@@ -39,16 +52,18 @@ def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, 
     """
     percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
     filledLength = int(length * iteration // total)
-    bar = fill * filledLength + '-' * (length - filledLength)
-    print('\r%s |%s| %s%% %s' % (prefix, bar, percent, suffix), end = printEnd)
+    bar = fill * filledLength + "-" * (length - filledLength)
+    print("\r%s |%s| %s%% %s" % (prefix, bar, percent, suffix), end=printEnd)
     # Print New Line on Complete
-    if iteration == total: 
+    if iteration == total:
         print()
+
 
 def grouper(n, iterable, fillvalue=None):
     "grouper(3, 'ABCDEFG', 'x') --> ABC DEF Gxx"
     args = [iter(iterable)] * n
     return list(zip_longest(fillvalue=fillvalue, *args))
+
 
 def around(coords, precision=5):
     """ Precision errors in shapely objections because of curled up points """
@@ -60,11 +75,13 @@ def around(coords, precision=5):
             result.append(around(coord, precision))
     return result
 
+
 def layer_precision(geom, precision=5):
     """ https://stackoverflow.com/questions/49099049/geopandas-shapely-spatial-difference-topologyexception """
     geojson = geometry.mapping(geom)
-    geojson['coordinates'] = around(geojson['coordinates'],precision)
+    geojson["coordinates"] = around(geojson["coordinates"], precision)
     return geometry.shape(geojson)
+
 
 def voronoi_polygons(voronoi, diameter):
     """https://stackoverflow.com/questions/23901943/voronoi-compute-exact-boundaries-of-every-region/38206656#38206656
@@ -86,8 +103,8 @@ def voronoi_polygons(voronoi, diameter):
         if u == -1:
             # Infinite ridge starting at ridge point with index v,
             # equidistant from input points with indexes p and q.
-            t = voronoi.points[q] - voronoi.points[p] # tangent
-            n = np.array([-t[1], t[0]]) / np.linalg.norm(t) # normal
+            t = voronoi.points[q] - voronoi.points[p]  # tangent
+            n = np.array([-t[1], t[0]]) / np.linalg.norm(t)  # normal
             midpoint = voronoi.points[[p, q]].mean(axis=0)
             direction = np.sign(np.dot(midpoint - centroid, n)) * n
             ridge_direction[p, v].append(direction)
@@ -100,29 +117,32 @@ def voronoi_polygons(voronoi, diameter):
             yield Polygon(voronoi.vertices[region])
             continue
         # Infinite region.
-        inf = region.index(-1)              # Index of vertex at infinity.
-        j = region[(inf - 1) % len(region)] # Index of previous vertex.
-        k = region[(inf + 1) % len(region)] # Index of next vertex.
+        inf = region.index(-1)  # Index of vertex at infinity.
+        j = region[(inf - 1) % len(region)]  # Index of previous vertex.
+        k = region[(inf + 1) % len(region)]  # Index of next vertex.
         if j == k:
             # Region has one Voronoi vertex with two ridges.
             dir_j, dir_k = ridge_direction[i, j]
         else:
             # Region has two Voronoi vertices, each with one ridge.
-            dir_j, = ridge_direction[i, j]
-            dir_k, = ridge_direction[i, k]
+            (dir_j,) = ridge_direction[i, j]
+            (dir_k,) = ridge_direction[i, k]
 
         # Length of ridges needed for the extra edge to lie at least
         # 'diameter' away from all Voronoi vertices.
         length = 2 * diameter / np.linalg.norm(dir_j + dir_k)
 
         # Polygon consists of finite part plus an extra edge.
-        finite_part = voronoi.vertices[region[inf + 1:] + region[:inf]]
-        extra_edge = [voronoi.vertices[j] + dir_j * length,
-                      voronoi.vertices[k] + dir_k * length]
+        finite_part = voronoi.vertices[region[inf + 1 :] + region[:inf]]
+        extra_edge = [
+            voronoi.vertices[j] + dir_j * length,
+            voronoi.vertices[k] + dir_k * length,
+        ]
         yield Polygon(np.concatenate((finite_part, extra_edge)))
 
-def generatePolygon( ctrX, ctrY, aveRadius, irregularity, spikeyness, numVerts ):
-    ''' https://stackoverflow.com/questions/8997099/algorithm-to-generate-random-2d-polygon
+
+def generatePolygon(ctrX, ctrY, aveRadius, irregularity, spikeyness, numVerts):
+    """ https://stackoverflow.com/questions/8997099/algorithm-to-generate-random-2d-polygon
     Start with the centre of the polygon at ctrX, ctrY, 
     then creates the polygon by sampling points on a circle around the centre. 
     Randon noise is added by varying the angular spacing between sequential points,
@@ -136,44 +156,50 @@ def generatePolygon( ctrX, ctrY, aveRadius, irregularity, spikeyness, numVerts )
     numVerts - self-explanatory
 
     Returns a list of vertices, in CCW order.
-    '''
+    """
 
-    irregularity = clip( irregularity, 0,1 ) * 2*math.pi / numVerts
-    spikeyness = clip( spikeyness, 0,1 ) * aveRadius
+    irregularity = clip(irregularity, 0, 1) * 2 * math.pi / numVerts
+    spikeyness = clip(spikeyness, 0, 1) * aveRadius
 
     # generate n angle steps
     angleSteps = []
-    lower = (2*math.pi / numVerts) - irregularity
-    upper = (2*math.pi / numVerts) + irregularity
+    lower = (2 * math.pi / numVerts) - irregularity
+    upper = (2 * math.pi / numVerts) + irregularity
     sum = 0
-    for i in range(numVerts) :
+    for i in range(numVerts):
         tmp = random.uniform(lower, upper)
-        angleSteps.append( tmp )
+        angleSteps.append(tmp)
         sum = sum + tmp
 
     # normalize the steps so that point 0 and point n+1 are the same
-    k = sum / (2*math.pi)
-    for i in range(numVerts) :
+    k = sum / (2 * math.pi)
+    for i in range(numVerts):
         angleSteps[i] = angleSteps[i] / k
 
     # now generate the points
     points = []
-    angle = random.uniform(0, 2*math.pi)
-    for i in range(numVerts) :
-        r_i = clip( random.gauss(aveRadius, spikeyness), 0, 2*aveRadius )
-        x = ctrX + r_i*math.cos(angle)
-        y = ctrY + r_i*math.sin(angle)
-        points.append( (.01 * int(x), .01 * int(y)) )
+    angle = random.uniform(0, 2 * math.pi)
+    for i in range(numVerts):
+        r_i = clip(random.gauss(aveRadius, spikeyness), 0, 2 * aveRadius)
+        x = ctrX + r_i * math.cos(angle)
+        y = ctrY + r_i * math.sin(angle)
+        points.append((0.01 * int(x), 0.01 * int(y)))
 
         angle = angle + angleSteps[i]
 
     return points
 
-def clip(x, min, max) :
-    if( min > max ) :  return x    
-    elif( x < min ) :  return min
-    elif( x > max ) :  return max
-    else :             return x
+
+def clip(x, min, max):
+    if min > max:
+        return x
+    elif x < min:
+        return min
+    elif x > max:
+        return max
+    else:
+        return x
+
 
 def generate_random_in_polygon(number, polygon):
 
@@ -189,23 +215,29 @@ def generate_random_in_polygon(number, polygon):
             counter += 1
     return list_of_points
 
+
 def xyz_to_lon_lat(X, Y, Z):
     """ Takes list of X, Y, and Z coordinates and spits out list of lon lat and rho """
 
-    phi = [math.degrees(np.arctan(y/x)) for x, y in zip(X,Y)]
-    theta = [math.degrees(np.arccos(z / math.sqrt((x**2)+(y**2)+(z**2)))) for x, y, z in zip(X,Y,Z)]
-    rho = [x**2 + y**2 + z**2 for x, y, z in zip(X,Y,Z)]
+    phi = [math.degrees(np.arctan(y / x)) for x, y in zip(X, Y)]
+    theta = [
+        math.degrees(np.arccos(z / math.sqrt((x ** 2) + (y ** 2) + (z ** 2))))
+        for x, y, z in zip(X, Y, Z)
+    ]
+    rho = [x ** 2 + y ** 2 + z ** 2 for x, y, z in zip(X, Y, Z)]
 
     return phi, theta, rho
+
 
 def lon_lat_to_xyz(lons, lats, radius):
     """ Converts set of points in longitude and lattitude to XYZ assuming r=1 """
 
-    X = radius*np.cos(np.radians(lons))*np.sin(np.radians(lats))
-    Y = radius*np.sin(np.radians(lons))*np.sin(np.radians(lats))
-    Z = radius*np.cos(np.radians(lats))
+    X = radius * np.cos(np.radians(lons)) * np.sin(np.radians(lats))
+    Y = radius * np.sin(np.radians(lons)) * np.sin(np.radians(lats))
+    Z = radius * np.cos(np.radians(lats))
 
     return X, Y, Z
+
 
 def removal_copy(lst, x):
     """ Returns a list with the element x removed """
@@ -217,34 +249,34 @@ def removal_copy(lst, x):
 
     return ret
 
-def convert_fits_xyz(dataset, number, nested=True, nside = None):
+
+def convert_fits_xyz(dataset, number, nested=True, nside=None):
 
     """ Given a fits file converts into xyz point """
 
-    #Extracts data from fits file
-    m, metadata = fits.read_sky_map('data/' + dataset + '/' + str(number) + '.fits', nest=None)
+    # Extracts data from fits file
+    m, metadata = fits.read_sky_map(
+        "data/" + dataset + "/" + str(number) + ".fits", nest=None
+    )
 
-    if nside is None: 
+    if nside is None:
         nside = hp.npix2nside(len(m))
     else:
         nside = nside
 
-
-
-    #Obtain pixels covering the 90% region
-    #Sorts pixels based on probability, 
-    #then takes all pixel until cumulative sum is >= 90%
+    # Obtain pixels covering the 90% region
+    # Sorts pixels based on probability,
+    # then takes all pixel until cumulative sum is >= 90%
     mflat = m.flatten()
     i = np.flipud(np.argsort(mflat))
     msort = mflat[i]
-    mcum = np.cumsum(msort)            
-    ind_to_90 = len(mcum[mcum <= 0.9*mcum[-1]])
+    mcum = np.cumsum(msort)
+    ind_to_90 = len(mcum[mcum <= 0.9 * mcum[-1]])
 
     area_pix = i[:ind_to_90]
 
-    x, y, z = hp.pix2vec(nside,area_pix,nest=nested)
+    x, y, z = hp.pix2vec(nside, area_pix, nest=nested)
     lon, lat, r = xyz_to_lon_lat(x, y, z)
-
 
     ra = np.asarray(lon) + 180
     dec = 90 - np.asarray(lat)
