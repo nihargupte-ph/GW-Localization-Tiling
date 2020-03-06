@@ -3,3 +3,10 @@ testing/
 special_plotting/
 spherical_geometry/
 testing.py
+__pycache__/
+crossover_frames/
+.mypy_cache/
+.ipynb_checkpoints/
+.vscode/
+frames/
+repair_frames/
