@@ -19,8 +19,6 @@ import os
 import time
 import warnings
 
-random.seed(2)
-
 warnings.filterwarnings("ignore")  # If you want to debug remove this
 cwd = os.getcwd()
 
