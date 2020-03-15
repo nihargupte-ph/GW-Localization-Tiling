@@ -8,5 +8,5 @@ crossover_frames/
 .mypy_cache/
 .ipynb_checkpoints/
 .vscode/
-frames/
+frames/*
 repair_frames/

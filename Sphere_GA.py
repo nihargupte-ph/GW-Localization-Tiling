@@ -19,6 +19,8 @@ import os
 import time
 import warnings
 
+random.seed(2)
+
 warnings.filterwarnings("ignore")  # If you want to debug remove this
 cwd = os.getcwd()
 
@@ -128,20 +130,19 @@ def double_intersection(polygon_list):
 
     intersections, already_checked = [], []
     for polygon in polygon_list:
-        already_checked.append(
-            polygon
-        )  # We don't need to check the polygons we already intersected with
+        already_checked.append(polygon)  # We don't need to check the polygons we already intersected with
         try:
-            union_of_polys = SphericalPolygon.multi_union(
-                diff(polygon_list, already_checked)
-            )
+            union_of_polys = SphericalPolygon.multi_union(diff(polygon_list, already_checked))
         except AssertionError:  # No intersection
             continue
 
         single_intersection = polygon.intersection(union_of_polys)
         intersections.append(single_intersection)
 
-    intersection = SphericalPolygon.multi_union(intersections)
+    try: 
+        intersection = SphericalPolygon.multi_union(intersections)
+    except:
+        return False, False
     intersection_area = intersection.area()
     total_area = SphericalPolygon.multi_union(polygon_list).area()
     frac_intersection = intersection_area / total_area
@@ -191,6 +192,7 @@ def proj_intersection(spher_poly1, spher_poly2):
     poly1 = spherical_poly_to_poly(spher_poly1)
     poly2 = spherical_poly_to_poly(spher_poly2)
     poly1 = poly1.buffer(0)
+    poly2 = poly2.buffer(0)
 
     intersec = poly1.intersection(poly2)
 
@@ -214,7 +216,6 @@ class Agent:
             )
             self.circle_list = [get_circle(i[0], i[1], self.fov) for i in tupled]
             self.update_centers()
-            self.remove_irrelavent_circles(region, 0.05, 0.05)
 
     def update_agent(self):
         self.remove_irrelavent_circles(region, 0.05, 0.05)
@@ -245,7 +246,6 @@ class Agent:
 
     def remove_irrelavent_circles(self, region, threshold_region, threshold_self):
         """ Removes all circles in circle_list that intrsect the region less than threshold returns circles that were removed """
-
         original_circle_list = self.circle_list
 
         kept_circles, removed_circles = [], []
@@ -267,15 +267,15 @@ class Agent:
 
         kept_circles, removed_circles = [], []
         for circle in self.circle_list:
-            rem_circle_list = self.circle_list[
-                :
-            ]  # Removes circle in list copy so we can check how much it intersects other circles
+            rem_circle_list = self.circle_list[:]  # Removes circle in list copy so we can check how much it intersects other circles
             rem_circle_list = [
                 circle for circle in rem_circle_list if circle not in removed_circles
             ]
             rem_circle_list.remove(circle)
 
             double_intersection_lst, _ = double_intersection(rem_circle_list)
+            if _ == False:
+                continue
             double_intersection_union = SphericalPolygon.multi_union(
                 double_intersection_lst
             )
@@ -303,13 +303,7 @@ class Agent:
         color1, color2, color3 = colors[1], colors[2], colors[3]
 
         # makes sure everything is nice and updated
-        self.update_agent()
-
-        labels = [
-            "Fitness: {}".format(self.fitness),
-            "Number of Circles: {}".format(self.length),
-        ]
-        plt.legend(labels, loc="upper left")
+        #self.update_agent()
 
         if fill:
             (
@@ -385,7 +379,7 @@ class Agent:
             polygon.set_color(np.random.rand(3,))
             ax.add_collection3d(polygon)
 
-    def plot_centers(self, m, zorder):
+    def plot_centers(self, m, zorder=2):
         """ Plots the centers of the circles in black """
         self.update_centers()
 
@@ -491,7 +485,7 @@ def repair_agent_BFGS(
             / region.area()
             > 0.98
         ):  # Check if we even need to update
-            return True
+            return True 
     except AssertionError:
         spher_union = SphericalPolygon.multi_union(agent.circle_list)
         intersect = proj_intersection(region, spher_union)
@@ -529,9 +523,7 @@ def repair_agents(agent_list, region, plot=False, generation=0, guess=False):
 
 
 def init_agents(fov, region, population, length=20):
-
     return [Agent(fov=fov, length=length, region=region) for _ in range(population)]
-
 
 def fitness(agent_list, region, initial_length):
 
@@ -556,7 +548,6 @@ def fitness(agent_list, region, initial_length):
 
     return agent_list
 
-
 def selection(agent_list):
 
     agent_list = sorted(agent_list, key=lambda agent: agent.fitness, reverse=True)
@@ -564,7 +555,6 @@ def selection(agent_list):
     agent_list = agent_list[: int(0.8 * len(agent_list))]
 
     return agent_list
-
 
 def crossover(agent_list, region, plot=False, generation=0):
     """ Crossover is determined by mixing voronoi diagrams """
@@ -749,7 +739,6 @@ def crossover(agent_list, region, plot=False, generation=0):
 
     return agent_list
 
-
 def mutation(agent_list, region):
 
     for agent in agent_list:
@@ -800,7 +789,6 @@ def mutation(agent_list, region):
             agent.move_circle(circle_to_move, delta_x, delta_y)
 
     return agent_list
-
 
 def ga(
     region,
@@ -920,7 +908,7 @@ dataset = (
 fov_diameter = 8  # FOV diameter in degrees
 
 # Open sample file, tested on 100
-i = 130  # 232
+i = 130  
 
 global colors
 colors = ["#ade6e6", "#ade6ad", "#e6ade6", "#e6adad"]
@@ -933,6 +921,15 @@ region = SphericalPolygon.convex_hull(list(zip(X, Y, Z)))
 
 
 # Clearing folder before we add new frames
+if not os.path.exists("{}/frames".format(cwd)):
+    os.mkdir("frames")
+if not os.path.exists("{}/repair_frames".format(cwd)):
+    os.mkdir("repair_frames")
+if not os.path.exists("{}/saved_agents".format(cwd)):
+    os.mkdir("saved_agents")
+if not os.path.exists("{}/crossover_frames".format(cwd)):
+    os.mkdir("crossover_frames")
+
 folders_to_clear = [
     "{}/frames".format(cwd),
     "{}/repair_frames".format(cwd),
@@ -949,15 +946,26 @@ for folder in folders_to_clear:
         except Exception as e:
             print("Failed to delete %s. Reason: %s" % (file_path, e))
 
-population = 2
-generations = 1
+population = 10
+generations = 5
 final_agent_list = ga(
     region,
     8,
     population,
     generations,
-    initial_length=10,
+    initial_length=6,
     plot_regions=True,
     plot_crossover=False,
 )
 
+#Testing
+# ag = Agent(fov=6, length=8, region=region)
+
+# ag.remove_irrelavent_circles(region, .05, .05)
+
+# m = get_m()
+# region.draw(m)
+# ag.plot_agent(region, m, fill=False)
+# ag.plot_centers(m)
+
+# plt.show()
