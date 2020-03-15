@@ -1,7 +1,7 @@
 # GW-Localization-Tiling
 GW localization maps on the sphere need to be tiled so CTA can determine what parts of the sky to look at.
 
-Described here are the codes from ^^ Insert paper here ^^ 
+Described here are the codes from https://arxiv.org/abs/2003.04839
 
 The most important files are Sphere_GA.py, Flat_GA.py, and Sphere_Light.py
 
