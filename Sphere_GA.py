@@ -1,8 +1,10 @@
 # Import
 import healpy as hp
 import numpy as np
+import pickle
 import shutil
 from scipy.spatial import SphericalVoronoi
+from scipy.spatial import Voronoi
 import math
 from shapely import geometry
 import scipy.optimize as optimize
@@ -19,17 +21,10 @@ import os
 import time
 import warnings
 
+random.seed(2)
+
 warnings.filterwarnings("ignore")  # If you want to debug remove this
 cwd = os.getcwd()
-
-
-def get_m(**plot_args):
-    """ Given plot args returns a basemap "axis" with the proper plot args. Edit this function if you want different maps """
-
-    m = Basemap(projection="ortho", resolution="c", lon_0=-70, lat_0=0, **plot_args)
-    # m.bluemarble()
-    return m
-
 
 def get_flat_circle(radius, center, step=100):
     """ Returns shapely polygon given radius and center. This is the same as get_circle in Flat_GA. Step is the number of verticies in the polygon, 
@@ -94,7 +89,6 @@ def powerful_union_area(polygon_list):
 
 
 def get_center(circle):
-
     """ Given circle returns ra dec of center of circle by projection """  # NOTE needs fixing 360 --> 0
 
     radec = list(circle.to_radec())
@@ -123,7 +117,6 @@ def poly_to_spherical_poly(poly):
 
 
 def double_intersection(polygon_list):
-
     """ Returns intersection between polygons in polygon_list and the area of their intersection. Perhaps upgrade to cascaded_union in future if program is taking too long this would be a major speed up """
 
     intersections, already_checked = [], []
@@ -134,10 +127,16 @@ def double_intersection(polygon_list):
         except AssertionError:  # No intersection
             continue
 
-        single_intersection = polygon.intersection(union_of_polys)
+        try:
+            single_intersection = polygon.intersection(union_of_polys)
+        except ValueError:  # No intersection between polygon and union_of_polys NOTE
+            continue
+        except AssertionError:  # No intersection between polygon and union_of_polys
+            continue
+
         intersections.append(single_intersection)
 
-    try: 
+    try:
         intersection = SphericalPolygon.multi_union(intersections)
     except:
         return False, False
@@ -149,7 +148,6 @@ def double_intersection(polygon_list):
 
 
 def intersection_region(region, polygon_list):
-
     """ Returns regions of intersection between the polygon_list and the region. Also returns the non intersection between polygon_list and the region. It will also return the fraction which the polygon list has covered """
 
     outside = region.invert_polygon()
@@ -199,6 +197,125 @@ def proj_intersection(spher_poly1, spher_poly2):
     return ret
 
 
+def breed_agents_ll(parent1, parent2):
+    """ Breeds agents based on their voronoi diagrams. Takes two parents as input and spits out 2 children as output """
+    parent1.update_centers()  # Even though voronoi updates the centers for readability
+    parent2.update_centers()
+
+    parent1.update_voronoi_ll()
+    parent2.update_voronoi_ll()
+
+    child1_center_list = []
+    for i, vor_poly in enumerate(parent1.voronoi_list_ll):
+        # Iterating through voronoi list and randomly selecting point_list from either parent 1 or parent 2
+
+        parent1_pt = parent1.center_list[i]
+
+        # Generating list of points from parent 2 which are in vor_poly
+        parent2_pts = [pt for pt in parent2.center_list if vor_poly.contains(geometry.Point(pt))]
+
+        choice = random.choice([1, 2])
+
+        if choice == 1 or parent2_pts == []:
+            child1_center_list.append(parent1_pt)
+        elif choice == 2:
+            child1_center_list.extend(parent2_pts)
+
+    child2_center_list = []
+    for i, vor_poly in enumerate(parent2.voronoi_list_ll):
+        # Iterating through voronoi list and randomly selecting point_list from either parent 1 or parent 2
+
+        # Generating list of points from parent 2 which are in vor_poly
+        parent1_pts = [pt for pt in parent1.center_list if vor_poly.contains(geometry.Point(pt))]
+
+        parent2_pt = parent2.center_list[i]
+
+        choice = random.choice([1, 2])
+
+        if choice == 1 or parent1_pts == []:
+            child2_center_list.extend(parent1_pts)
+        elif choice == 2:
+            child2_center_list.append(parent2_pt)
+
+    child1 = Agent(fov=parent1.fov)
+    child2 = Agent(fov=parent1.fov)
+    child1.circle_list = [get_circle(c[0], c[1], child1.fov) for c in child1_center_list]
+    child2.circle_list = [get_circle(c[0], c[1], child2.fov) for c in child2_center_list]
+
+    child1.update_agent()
+    child2.update_agent()
+
+    return child1, child2
+
+
+def breed_agents_spher(parent1, parent2):
+    """ Breeds agents based on their voronoi diagrams. Takes two parents as input and spits out 2 children as output """
+    parent1.update_voronoi()
+    parent2.update_voronoi()
+
+    child1_center_list = []
+    for i, vor_poly in enumerate(parent1.voronoi_list):
+        # Iterating through voronoi list and randomly selecting point_list from either parent 1 or parent 2
+
+        parent1_pt = parent1.center_list[i]
+
+        lons, lats = zip(*parent2.center_list)
+        x, y, z = lon_lat_to_xyz(lons, lats, 1)
+        parent2_center_list_xyz = list(zip(x, y, z))
+
+        # Generating list of points from parent 2 which are in vor_poly
+        parent2_pts = [pt for pt in parent2_center_list_xyz if vor_poly.contains_point(pt)]
+
+        choice = random.choice([1, 2])
+
+        print(len(parent1_pt))
+        print()
+        print(len(parent2_pts))
+        print('-----------------------------------------')
+
+        if choice == 1 or parent2_pts == []:
+            child1_center_list.append(parent1_pt)
+        elif choice == 2:
+            x, y, z = zip(*parent2_pts)
+            lon, lat, _ = xyz_to_lon_lat(x, y, z)
+            pt = list(zip(lon, lat))
+            child1_center_list.extend(pt)
+
+    child2_center_list = []
+    for i, vor_poly in enumerate(parent2.voronoi_list):
+        # Iterating through voronoi list and randomly selecting point_list from either parent 1 or parent 2
+
+        parent2_pt = parent2.center_list[i]
+
+        lons, lats = zip(*parent1.center_list)
+        x, y, z = lon_lat_to_xyz(lons, lats, 1)
+        parent1_center_list_xyz = list(zip(x, y, z))
+
+        parent1_pts = [
+            pt for pt in parent1_center_list_xyz if vor_poly.contains_point(pt)
+        ]  # Generating list of points from parent 2 which are in vor_poly
+
+        choice = random.choice([1, 2])
+
+        if choice == 1 or parent1_pts == []:
+            child2_center_list.append(parent2_pt)
+        elif choice == 2:
+            x, y, z = zip(*parent1_pts)
+            lon, lat, _ = xyz_to_lon_lat(x, y, z)
+            pt = list(zip(lon, lat))
+            child2_center_list.extend(pt)
+
+    child1 = Agent(fov=parent1.fov)
+    child2 = Agent(fov=parent1.fov)
+    child1.circle_list = [get_circle(c[0], c[1], child1.fov) for c in child1_center_list]
+    child2.circle_list = [get_circle(c[0], c[1], child2.fov) for c in child2_center_list]
+
+    child1.update_agent()
+    child2.update_agent()
+
+    return child1, child2
+
+
 class Agent:
     def __init__(self, fov=None, length=None, region=None):
         """ Agent object"""
@@ -216,7 +333,7 @@ class Agent:
             self.update_centers()
 
     def update_agent(self):
-        self.remove_irrelavent_circles(region, 0.05, 0.05)
+        #self.remove_irrelavent_circles(region, 0.05, 0.05)
         self.length = len(self.circle_list)
 
     def get_intersections(self, region):
@@ -265,25 +382,16 @@ class Agent:
 
         kept_circles, removed_circles = [], []
         for circle in self.circle_list:
-            rem_circle_list = self.circle_list[:]  # Removes circle in list copy so we can check how much it intersects other circles
-            rem_circle_list = [
-                circle for circle in rem_circle_list if circle not in removed_circles
-            ]
+            # Removes circle in list copy so we can check how much it intersects other circles
+            rem_circle_list = self.circle_list[:]
+            rem_circle_list = [circle for circle in rem_circle_list if circle not in removed_circles]
             rem_circle_list.remove(circle)
 
             double_intersection_lst, _ = double_intersection(rem_circle_list)
             if _ == False:
                 continue
-            double_intersection_union = SphericalPolygon.multi_union(
-                double_intersection_lst
-            )
-            frac = (
-                np.abs(
-                    double_intersection_union.intersection(circle).area()
-                    - circle.area()
-                )
-                / circle.area()
-            )
+            double_intersection_union = SphericalPolygon.multi_union(double_intersection_lst)
+            frac = (np.abs(double_intersection_union.intersection(circle).area() - circle.area()) / circle.area())
 
             if frac < threshold_self:
                 removed_circles.append(circle)
@@ -292,16 +400,14 @@ class Agent:
 
         self.circle_list = kept_circles
 
-        return [
-            circle for circle in original_circle_list if circle not in self.circle_list
-        ]
+        return [circle for circle in original_circle_list if circle not in self.circle_list]
 
     def plot_agent(self, region, m, zorder=1, fill=True):
 
         color1, color2, color3 = colors[1], colors[2], colors[3]
 
         # makes sure everything is nice and updated
-        #self.update_agent()
+        # self.update_agent()
 
         if fill:
             (
@@ -346,7 +452,7 @@ class Agent:
         self.center_list = [get_center(shape) for shape in self.circle_list]
 
     def update_voronoi(self):
-        """ Get vornoi diagrams given circles """
+        """ Get spherical voronoi diagrams given circles """
 
         self.update_centers()  # makes sure there centers are accurate
         lon, lat = zip(*self.center_list)
@@ -362,20 +468,57 @@ class Agent:
             ]  # Gets the verticies for a particular voronoi region
             self.voronoi_list.append(SphericalPolygon(vert))
 
-    def plot_voronoi(self, ax, **plot_args):
-        """ Plots voronoi diagrams """
+    def update_voronoi_ll(self):
+        """ Get projected voronoi diagrams """
+
+        self.update_centers()
+
+        boundary = np.array(
+            [
+                (0, 0),
+                (360, 0),
+                (360, 180),
+                (0, 180),
+            ]
+        )
+
+        x, y = boundary.T
+        diameter = np.linalg.norm(boundary.ptp(axis=0))
+
+        self.voronoi_list_ll = []
+        boundary_polygon = geometry.Polygon(boundary)
+        for p in voronoi_polygons(Voronoi(self.center_list), diameter):
+            self.voronoi_list_ll.append(p.intersection(boundary_polygon))
+
+    def plot_voronoi_ll(self, **plot_args):
+        """ Ploted lon lat coord voronoi diagrams """
+
+        self.update_voronoi_ll()
+        print(self.voronoi_list_ll)
+
+        for poly in self.voronoi_list_ll:
+            print(poly)
+            plt.fill(*poly.exterior.xy, **plot_args)
+
+    def plot_voronoi(self, ax, basemap=False, **plot_args):
+        """ Plots projection of lonlat coordinates"""
 
         self.update_voronoi()
 
-        lon, lat = zip(*self.center_list)
-        X, Y, Z = lon_lat_to_xyz(lon, lat, 1)
-        points = np.array(list(zip(X, Y, Z)))
-        ax.scatter(points[..., 0], points[..., 1], points[..., 2])
+        if basemap:
+            for poly in self.voronoi_list:
+                poly.draw(m)
 
-        for region in self.spher_vor.regions:
-            polygon = Poly3DCollection([self.spher_vor.vertices[region]], **plot_args)
-            polygon.set_color(np.random.rand(3,))
-            ax.add_collection3d(polygon)
+        else:
+            lon, lat = zip(*self.center_list)
+            X, Y, Z = lon_lat_to_xyz(lon, lat, 1)
+            points = np.array(list(zip(X, Y, Z)))
+            ax.scatter(points[..., 0], points[..., 1], points[..., 2])
+
+            for region in self.spher_vor.regions:
+                polygon = Poly3DCollection([self.spher_vor.vertices[region]], **plot_args)
+                polygon.set_color(np.random.rand(3,))
+                ax.add_collection3d(polygon)
 
     def plot_centers(self, m, zorder=2):
         """ Plots the centers of the circles in black """
@@ -408,13 +551,17 @@ def repair_agent_BFGS(
     """ Given agent uses quasi newton secant update to rearrange circles in agent to cover the region """
 
     try:
-        if (
-            region.intersection(SphericalPolygon.multi_union(agent.circle_list)).area()
-            / region.area()
-            > 0.98
-        ):  # Check if we even need to update
+        if (region.intersection(SphericalPolygon.multi_union(agent.circle_list)).area() / region.area() > 0.98):  # Check if we even need to update
             return True
+
     except AssertionError:
+        spher_union = SphericalPolygon.multi_union(agent.circle_list)
+        intersect = proj_intersection(region, spher_union)
+
+        if intersect.area() / region.area() > 0.98:
+            return True
+
+    except ValueError:
         spher_union = SphericalPolygon.multi_union(agent.circle_list)
         intersect = proj_intersection(region, spher_union)
 
@@ -427,9 +574,7 @@ def repair_agent_BFGS(
     tupled = [(c[0], c[1]) for c in agent.center_list]
     guess = [item for sublist in tupled for item in sublist]
 
-    optimized = optimize.minimize(
-        proj_intersection_area_inv, guess, args=(region, agent.fov), method="BFGS"
-    )
+    optimized = optimize.minimize(proj_intersection_area_inv, guess, args=(region, agent.fov), method="L-BFGS-B")
 
     tupled_guess = grouper(2, guess)
     tupled_optimized = grouper(2, optimized.x)
@@ -478,12 +623,8 @@ def repair_agent_BFGS(
         plt.close()
 
     try:
-        if (
-            region.intersection(SphericalPolygon.multi_union(agent.circle_list)).area()
-            / region.area()
-            > 0.98
-        ):  # Check if we even need to update
-            return True 
+        if (region.intersection(SphericalPolygon.multi_union(agent.circle_list)).area() / region.area() > 0.98):  # Check if we even need to update
+            return True
     except AssertionError:
         spher_union = SphericalPolygon.multi_union(agent.circle_list)
         intersect = proj_intersection(region, spher_union)
@@ -523,6 +664,7 @@ def repair_agents(agent_list, region, plot=False, generation=0, guess=False):
 def init_agents(fov, region, population, length=20):
     return [Agent(fov=fov, length=length, region=region) for _ in range(population)]
 
+
 def fitness(agent_list, region, initial_length):
 
     alpha = 2.1
@@ -546,6 +688,7 @@ def fitness(agent_list, region, initial_length):
 
     return agent_list
 
+
 def selection(agent_list):
 
     agent_list = sorted(agent_list, key=lambda agent: agent.fitness, reverse=True)
@@ -554,75 +697,9 @@ def selection(agent_list):
 
     return agent_list
 
-def crossover(agent_list, region, plot=False, generation=0):
+
+def crossover(agent_list, region, plot=False, generation=0, scheme='ll'):
     """ Crossover is determined by mixing voronoi diagrams """
-
-    def breed_agents(parent1, parent2):
-        """ Breeds agents based on their voronoi diagrams. Takes two parents as input and spits out 2 children as output """
-        parent1.update_voronoi()
-        parent2.update_voronoi()
-
-        child1_center_list = []
-        for i, vor_poly in enumerate(parent1.voronoi_list):
-            # Iterating through voronoi list and randomly selecting point_list from either parent 1 or parent 2
-
-            parent1_pt = parent1.center_list[i]
-
-            lons, lats = zip(*parent2.center_list)
-            x, y, z = lon_lat_to_xyz(lons, lats, 1)
-            parent2_center_list_xyz = list(zip(x, y, z))
-
-            parent2_pts = [
-                pt for pt in parent2_center_list_xyz if vor_poly.contains_point(pt)
-            ]  # Generating list of points from parent 2 which are in vor_poly
-
-            choice = random.choice([1, 2])
-
-            if choice == 1 or parent2_pts == []:
-                child1_center_list.append(parent1_pt)
-            elif choice == 2:
-                x, y, z = zip(*parent2_pts)
-                lon, lat, _ = xyz_to_lon_lat(x, y, z)
-                pt = list(zip(lon, lat))
-                child1_center_list.extend(pt)
-
-        child2_center_list = []
-        for i, vor_poly in enumerate(parent2.voronoi_list):
-            # Iterating through voronoi list and randomly selecting point_list from either parent 1 or parent 2
-
-            parent2_pt = parent2.center_list[i]
-
-            lons, lats = zip(*parent1.center_list)
-            x, y, z = lon_lat_to_xyz(lons, lats, 1)
-            parent1_center_list_xyz = list(zip(x, y, z))
-
-            parent1_pts = [
-                pt for pt in parent1_center_list_xyz if vor_poly.contains_point(pt)
-            ]  # Generating list of points from parent 2 which are in vor_poly
-
-            choice = random.choice([1, 2])
-
-            if choice == 1 or parent1_pts == []:
-                child2_center_list.append(parent2_pt)
-            elif choice == 2:
-                x, y, z = zip(*parent1_pts)
-                lon, lat, _ = xyz_to_lon_lat(x, y, z)
-                pt = list(zip(lon, lat))
-                child2_center_list.extend(pt)
-
-        child1 = Agent(fov=parent1.fov)
-        child2 = Agent(fov=parent1.fov)
-        child1.circle_list = [
-            get_circle(c[0], c[1], child1.fov) for c in child1_center_list
-        ]
-        child2.circle_list = [
-            get_circle(c[0], c[1], child2.fov) for c in child2_center_list
-        ]
-
-        child1.update_agent()
-        child2.update_agent()
-
-        return child1, child2
 
     offspring = []
     for i in range(round(len(agent_list) / 2)):
@@ -631,111 +708,22 @@ def crossover(agent_list, region, plot=False, generation=0):
         parent1 = random.choice(agent_list)
         parent2 = random.choice(agent_list)
 
-        child1, child2 = breed_agents(parent1, parent2)
+        if scheme == 'll':
+            child1, child2 = breed_agents_ll(parent1, parent2)
+        else:
+            child1, child2 = breed_agents_spher(parent1, parent2)
+
         offspring.append(child1)
         offspring.append(child2)
 
         if plot:  # Currently not implemented
             raise NotImplementedError("Not implemented just yet")
             os.mkdir("{}/crossover_frames/generation_{}/{}".format(cwd, generation, i))
-            m = get_m()
-            region.draw(m)
-            parent1.plot_voronoi(2, 0.3)
-            parent1.plot_centers(3)
-            plt.savefig(
-                "{}/crossover_frames/generation_{}/{}/parent1_voronoi.png".format(
-                    cwd, generation, i
-                )
-            )
-            plt.close()
-
-            m = get_m()
-            region.draw(m)
-            parent2.plot_voronoi(2, 0.3)
-            parent2.plot_centers(3)
-            plt.savefig(
-                "{}/crossover_frames/generation_{}/{}/parent2_voronoi.png".format(
-                    cwd, generation, i
-                )
-            )
-            plt.close()
-
-            child1, child2 = breed_agents(parent1, parent2)
-
-            plt.figure(figsize=(6, 6))
-            m = get_m()
-            region.draw(m)
-            child1.plot_voronoi(2, 0.3)
-            child1.plot_centers(3)
-            plt.savefig(
-                "{}/crossover_frames/generation_{}/{}/child1_voronoi.png".format(
-                    cwd, generation, i
-                )
-            )
-            plt.close()
-
-            plt.figure(figsize=(6, 6))
-            m = get_m()
-            region.draw(m)
-            child2.plot_voronoi(2, 0.3)
-            child2.plot_centers(3)
-            plt.savefig(
-                "{}/crossover_frames/generation_{}/{}/child2_voronoi.png".format(
-                    cwd, generation, i
-                )
-            )
-            plt.close()
-
-            # Plotting actual agents
-            plt.figure(figsize=(6, 6))
-            plt.plot(*test_polygon.exterior.xy)
-            parent1.plot_agent(test_polygon, bounding_box)
-            parent1.plot_centers(3)
-            plt.savefig(
-                "{}/crossover_frames/generation_{}/{}/parent1.png".format(
-                    cwd, generation, i
-                )
-            )
-            plt.close()
-
-            plt.figure(figsize=(6, 6))
-            plt.plot(*test_polygon.exterior.xy)
-            parent2.plot_agent(test_polygon, bounding_box)
-            parent2.plot_centers(3)
-            plt.savefig(
-                "{}/crossover_frames/generation_{}/{}/parent2.png".format(
-                    cwd, generation, i
-                )
-            )
-            plt.close()
-
-            child1, child2 = breed_agents(parent1, parent2)
-
-            plt.figure(figsize=(6, 6))
-            plt.plot(*test_polygon.exterior.xy)
-            child1.plot_agent(test_polygon, bounding_box)
-            child1.plot_centers(3)
-            plt.savefig(
-                "{}/crossover_frames/generation_{}/{}/child1.png".format(
-                    cwd, generation, i
-                )
-            )
-            plt.close()
-
-            plt.figure(figsize=(6, 6))
-            plt.plot(*test_polygon.exterior.xy)
-            child2.plot_agent(test_polygon, bounding_box)
-            child2.plot_centers(3)
-            plt.savefig(
-                "{}/crossover_frames/generation_{}/{}/child2.png".format(
-                    cwd, generation, i
-                )
-            )
-            plt.close()
 
     agent_list.extend(offspring)
 
     return agent_list
+
 
 def mutation(agent_list, region):
 
@@ -769,12 +757,18 @@ def mutation(agent_list, region):
             agent.circle_list.remove(worst_circle_self)
 
         if random.uniform(0, 1) <= 0.3:
-            worst_circle_region = sorted(
-                agent.circle_list, key=lambda x: region.intersection(x).area()
-            )[
-                -1
-            ]  # Finds circle which intersects region the least
+            # Finds circle which intersects region the least
+            #Can't just use worst_circle_region = sorted(agent.circle_list, key=lambda x: region.intersection(x).area())[-1] since spherical_geometry package doesn't like it... I think they are working on this
+            area_list = []
+            for circ in agent.circle_list:
+                #We need to try catch because spherical_geometry bug
+                try:
+                    area_list.append(region.intersection(circ))
+                except AssertionError:
+                    area_list.append(1000)
 
+            worst_circle_region = [x for _, x in sorted(zip(area_list, agent.circle_list), key=lambda pair: pair[0])][-1]
+            
             agent.circle_list.remove(worst_circle_region)
 
         if random.uniform(0, 1) <= 0.3:
@@ -788,6 +782,7 @@ def mutation(agent_list, region):
 
     return agent_list
 
+
 def ga(
     region,
     fov,
@@ -795,7 +790,9 @@ def ga(
     generations,
     initial_length=100,
     plot_regions=False,
+    crossover_scheme=None,
     plot_crossover=False,
+    save_agents=False,
 ):
 
     start = time.process_time()  # Timing entire program
@@ -849,19 +846,18 @@ def ga(
             plt.savefig("frames/generation_{}/agent_{}".format(generation, i))
             plt.close()
 
-        print(
-            "frame saved in frames/generation_{}. Run time {}".format(
-                generation, time.process_time() - before
-            )
-        )
+        print("frame saved in frames/generation_{}. Run time {}".format(generation, time.process_time() - before))
         print()
+
+        if save_agents:
+            for i, agent in enumerate(agent_list):
+                file_pi = open('{}/saved_agents/agent_{}.obj'.format(cwd, i), 'wb')
+                pickle.dump(agent, file_pi)
 
         before = time.process_time()
         print("Beginning crossover")
         os.mkdir("{}/crossover_frames/generation_{}".format(cwd, generation))
-        agent_list = crossover(
-            agent_list, region, plot=plot_crossover, generation=generation
-        )
+        agent_list = crossover(agent_list, region, plot=plot_crossover, generation=generation, scheme=crossover_scheme)
         print("Sucessful. Run time {}".format(time.process_time() - before))
         print()
 
@@ -874,24 +870,14 @@ def ga(
         if generation > 0:
             before = time.process_time()
             print("Repairing Agents")
-            agent_list = repair_agents(
-                agent_list, region, plot=plot_regions, generation=generation
-            )
-            print(
-                "Sucessful. {} Agents remain. Run time {}".format(
-                    len(agent_list), time.process_time() - before
-                )
-            )
+            agent_list = repair_agents(agent_list, region, plot=plot_regions, generation=generation)
+            print("Sucessful. {} Agents remain. Run time {}".format(len(agent_list), time.process_time() - before))
             if len(agent_list) < 3:
                 break
             print()
 
         print()
-        print(
-            "Completed. Generational run time {}".format(
-                time.process_time() - generation_start
-            )
-        )
+        print("Completed. Generational run time {}".format(time.process_time() - generation_start))
         print()
         print()
 
@@ -906,7 +892,7 @@ dataset = (
 fov_diameter = 8  # FOV diameter in degrees
 
 # Open sample file, tested on 100
-i = 130  
+i = 130
 
 global colors
 colors = ["#ade6e6", "#ade6ad", "#e6ade6", "#e6adad"]
@@ -944,26 +930,16 @@ for folder in folders_to_clear:
         except Exception as e:
             print("Failed to delete %s. Reason: %s" % (file_path, e))
 
-population = 10
+population = 5
 generations = 5
 final_agent_list = ga(
     region,
-    8,
+    6,
     population,
     generations,
-    initial_length=6,
+    crossover_scheme='ll',
+    initial_length=8,
     plot_regions=True,
     plot_crossover=False,
+    save_agents=True
 )
-
-#Testing
-# ag = Agent(fov=6, length=8, region=region)
-
-# ag.remove_irrelavent_circles(region, .05, .05)
-
-# m = get_m()
-# region.draw(m)
-# ag.plot_agent(region, m, fill=False)
-# ag.plot_centers(m)
-
-# plt.show()

@@ -425,7 +425,7 @@ def repair_agent_BFGS(
     guess = [item for sublist in tupled for item in sublist]
 
     optimized = optimize.minimize(
-        intersection_area_inv, guess, args=(region, agent.radius), method="BFGS"
+        intersection_area_inv, guess, args=(region, agent.radius), method="L-BFGS-B"
     )
 
     tupled_guess = grouper(2, guess)
@@ -509,9 +509,7 @@ def repair_agents(agent_list, region, plot=False, generation=0, guess=False):
     repaired_agent_list = []
     for i, agent in enumerate(agent_list):
         printProgressBar(i, len(agent_list))
-        if repair_agent_BFGS(
-            agent, region, plot=plot, generation=generation, agent_number=i, debug=False
-        ):
+        if repair_agent_BFGS(agent, region, plot=plot, generation=generation, agent_number=i, debug=False):
             repaired_agent_list.append(agent)
 
     return repaired_agent_list
@@ -892,11 +890,7 @@ def ga(
             plt.savefig("frames/generation_{}/agent_{}".format(generation, i))
             plt.close()
 
-        print(
-            "frame saved in frames/generation_{}. Run time {}".format(
-                generation, time.process_time() - before
-            )
-        )
+        print("frame saved in frames/generation_{}. Run time {}".format(generation, time.process_time() - before))
         print()
 
         before = time.process_time()
@@ -966,8 +960,6 @@ bounding_box = {
     "top right": (2, 2),
     "top left": (-2, 2),
 }
-
-# test_polygon = geometry.Polygon([(-.6, -.6), (.6, -.6), (.6, .6), (-.6, .6)])
 
 random_polygon_pts = generatePolygon(
     ctrX=0, ctrY=0, aveRadius=50, irregularity=0.35, spikeyness=0.2, numVerts=10

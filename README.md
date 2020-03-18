@@ -5,7 +5,7 @@ Described here are the codes from https://arxiv.org/abs/2003.04839
 
 The most important files are Sphere_GA.py, Flat_GA.py, and Sphere_Light.py
 
-To install, just clone this directory to a local machine.
+To install, just clone this directory to a local machine. Then create a new conda virtual environment using: ```conda create -n name_of_virtualenv```. Then run ```conda activate name_of_virtualenv```. Finally, run ```pip install -r requirements.txt``` to install the dependancies required to run this program. 
 
 # Flat_GA.py and Sphere_GA.py
 This is the file to use for the genetic algorithm on a flat Euclidean geometry and spherical geometry respectively. In the files, there are 2 main parameters, 1 main function along with there are 6 important helper functions (which are the same 6 described in the pseudocode of the paper). 
