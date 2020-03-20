@@ -16,7 +16,6 @@ from scipy.stats import expon
 from misc_functions import *
 import fiona
 import time
-from scipy.spatial import ConvexHull
 
 global cwd
 cwd = os.getcwd()
@@ -37,7 +36,7 @@ def get_circle(radius, center, step=100):
 
 
 class Agent:
-    def __init__(self, radius=None, bounding_box=None, length=None, region=None):
+    def __init__(self, radius=None, length=None, region=None):
         """ Agent object"""
 
         self.fitness = -1000  # Dummy value
@@ -100,7 +99,7 @@ class Agent:
             circle for circle in original_circle_list if circle not in self.circle_list
         ]
 
-    def get_intersections(self, region, bounding_box):
+    def get_intersections(self, region):
         """ Returns all types of intersections. self_intersection, self_intersection_fraction, region_intersection, region_nonintersection, region_intersection_fraction """
 
         self_intersection, self_intersection_fraction = double_intersection(
@@ -150,7 +149,7 @@ class Agent:
             region_nonintersection_fraction,
         )
 
-    def plot_agent(self, region, bounding_box, ax=None, zorder=1, fill=True):
+    def plot_agent(self, region, ax=None, zorder=1, fill=True):
 
         """ Plots circle intersection and non interesection with region as well as self intersection"""
 
@@ -372,7 +371,7 @@ def double_intersection(polygon_list):
     return intersection, frac_intersection
 
 
-def intersection_region(region, polygon_list, bounding_box):
+def intersection_region(region, polygon_list):
 
     """ Returns regions of intersection between the polygon_list and the region. Also returns the non intersection between polygon_list and the region. It will also return the fraction which the polygon list has covered """
 
@@ -481,9 +480,7 @@ def repair_agent_BFGS(
         )
         plt.close()
 
-    if (
-        region.difference(unary_union(agent.circle_list)).area < 0.01
-    ):  # Precision errors
+    if (region.difference(unary_union(agent.circle_list)).area < 0.01):  # Precision errors
         return True
     else:
         return False
@@ -514,8 +511,7 @@ def repair_agents(agent_list, region, plot=False, generation=0, guess=False):
 
     return repaired_agent_list
 
-
-def init_agents(radius, bounding_box, region, length=20):
+def init_agents(radius, region, length=20):
 
     return [
         Agent(radius=radius, bounding_box=bounding_box, length=length, region=region)
@@ -523,7 +519,7 @@ def init_agents(radius, bounding_box, region, length=20):
     ]
 
 
-def fitness(agent_list, region, bounding_box, initial_length):
+def fitness(agent_list, region, initial_length):
 
     alpha = 2.1
     beta = 0.8
@@ -820,7 +816,6 @@ def mutation(agent_list, region):
 def ga(
     region,
     radius,
-    bounding_box,
     initial_length=100,
     plot_regions=False,
     save_agents=False,
@@ -831,7 +826,7 @@ def ga(
 
     before = time.process_time()
     print("Initializing Agents...")
-    agent_list = init_agents(radius, bounding_box, region, length=initial_length)
+    agent_list = init_agents(radius, region, length=initial_length)
     print("Agents initialized. Run time {}".format(time.process_time() - before))
 
     for generation in range(generations):
@@ -843,9 +838,7 @@ def ga(
         if generation == 0:
             before = time.process_time()
             print("Repairing Agents")
-            agent_list = repair_agents(
-                agent_list, region, plot=plot_regions, generation=generation, guess=True
-            )
+            agent_list = repair_agents(agent_list, region, plot=plot_regions, generation=generation, guess=True)
             if save_agents:
                 os.mkdir("{}/saved_agents/generation_{}".format(cwd, generation))
                 for i, agent in enumerate(agent_list):
@@ -865,7 +858,7 @@ def ga(
 
         before = time.process_time()
         print("Determining Fitness")
-        agent_list = fitness(agent_list, region, bounding_box, initial_length)
+        agent_list = fitness(agent_list, region, initial_length)
         print("Sucessful. Run time {}".format(time.process_time() - before))
         print()
 
@@ -954,17 +947,17 @@ generations = 10
 global colors
 colors = ["#ade6e6", "#ade6ad", "#e6ade6", "#e6adad"]
 
-bounding_box = {
-    "bottom left": (-2, -2),
-    "bottom right": (2, -2),
-    "top right": (2, 2),
-    "top left": (-2, 2),
-}
+# bounding_box = {
+#     "bottom left": (-2, -2),
+#     "bottom right": (2, -2),
+#     "top right": (2, 2),
+#     "top left": (-2, 2),
+# }
 
-random_polygon_pts = generatePolygon(
-    ctrX=0, ctrY=0, aveRadius=50, irregularity=0.35, spikeyness=0.2, numVerts=10
-)
-random_polygon = geometry.Polygon(random_polygon_pts)
+# random_polygon_pts = generatePolygon(
+#     ctrX=0, ctrY=0, aveRadius=50, irregularity=0.35, spikeyness=0.2, numVerts=10
+# )
+# random_polygon = geometry.Polygon(random_polygon_pts)
 
 # Clearing folder before we add new frames
 folders_to_clear = [
@@ -983,13 +976,13 @@ for folder in folders_to_clear:
         except Exception as e:
             print("Failed to delete %s. Reason: %s" % (file_path, e))
 
-ga(
-    random_polygon,
-    0.25,
-    bounding_box,
-    initial_length=10,
-    plot_regions=True,
-    save_agents=False,
-    plot_crossover=False,
-)
+# ga(
+#     random_polygon,
+#     0.25,
+#     bounding_box,
+#     initial_length=10,
+#     plot_regions=True,
+#     save_agents=False,
+#     plot_crossover=False,
+# )
 

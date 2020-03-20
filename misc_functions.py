@@ -3,21 +3,15 @@ from shapely.geometry import Polygon
 from itertools import zip_longest
 import numpy as np
 import random
+from scipy.spatial import ConvexHull
 from ligo.skymap.io import fits
 from ligo.skymap.postprocess import find_greedy_credible_levels
 import healpy as hp
 import math
+from scipy.spatial import Delaunay
 
 from mpl_toolkits.basemap import Basemap
 from collections import defaultdict
-
-
-def get_m(**plot_args):
-    """ Given plot args returns a basemap "axis" with the proper plot args. Edit this function if you want different maps """
-
-    m = Basemap(projection="ortho", resolution="c", lon_0=-70, lat_0=50, **plot_args)
-    m.drawcoastlines()
-    return m
 
 
 def diff(li1, li2):
@@ -220,10 +214,7 @@ def xyz_to_lon_lat(X, Y, Z):
     """ Takes list of X, Y, and Z coordinates and spits out list of lon lat and rho """
 
     phi = [math.degrees(np.arctan(y / x)) for x, y in zip(X, Y)]
-    theta = [
-        math.degrees(np.arccos(z / math.sqrt((x ** 2) + (y ** 2) + (z ** 2))))
-        for x, y, z in zip(X, Y, Z)
-    ]
+    theta = [math.degrees(np.arccos(z / math.sqrt((x ** 2) + (y ** 2) + (z ** 2)))) - 90 for x, y, z in zip(X, Y, Z)]
     rho = [x ** 2 + y ** 2 + z ** 2 for x, y, z in zip(X, Y, Z)]
 
     return phi, theta, rho
@@ -282,3 +273,62 @@ def convert_fits_xyz(dataset, number, nested=True, nside=None):
     dec = 90 - np.asarray(lat)
 
     return x, y, z
+
+def make_fits_lonlat(path, nested=True, nside=None):
+    """ Returns lon lat of given fits file """
+
+    m, metadata = fits.read_sky_map(path, nest=None)
+    
+    """	
+    m is array with pixel probabilities	
+    rad input in degrees	
+    dilation optional argument, reduces distance between pointings to 	
+    prevent uncovered area at triple point in tessellation	
+    nest takes argument from metadata, True or False	
+    """
+
+    if nside is None:
+        nside = hp.npix2nside(len(m))
+    else:
+        nside = nside
+
+    # Obtain pixels covering the 90% region
+    # Sorts pixels based on probability,
+    # then takes all pixel until cumulative sum is >= 90%
+    mflat = m.flatten()
+    i = np.flipud(np.argsort(mflat))
+    msort = mflat[i]
+    mcum = np.cumsum(msort)
+    ind_to_90 = len(mcum[mcum <= 0.9*mcum[-1]])
+
+    area_pix = i[:ind_to_90]
+
+    x, y, z = hp.pix2vec(nside, area_pix, nest=nested)
+    lon, lat, _ = xyz_to_lon_lat(x, y, z)
+
+    return lon, lat
+
+def get_convex_hull(pt_lst1, pt_lst2):
+    """ Given 2 lists of points return convex hull of the points """
+
+    points = np.array(list(zip(pt_lst1, pt_lst2)))
+    hull = ConvexHull(points)
+    hull_pts = list(zip(points[hull.vertices,0], points[hull.vertices,1]))
+
+    return hull_pts
+
+
+global bounding_box
+bounding_box = {
+    "bottom left": (-180, -90),
+    "bottom right": (180, -90),
+    "top right": (180, 90),
+    "top left": (0, 90),
+}
+
+# bounding_box = {
+#     "bottom left": (-2, -2),
+#     "bottom right": (2, -2),
+#     "top right": (2, 2),
+#     "top left": (-2, 2),
+# }

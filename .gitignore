@@ -10,3 +10,7 @@ crossover_frames/*
 frames/*
 repair_frames/*
 *.obj
+*.cpg
+*.dbf
+*.prj
+*.shx

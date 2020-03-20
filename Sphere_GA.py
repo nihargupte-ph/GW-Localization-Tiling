@@ -20,11 +20,20 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import os
 import time
 import warnings
+from Sphere_GA_Proj import get_concave_hull
 
 random.seed(2)
 
 warnings.filterwarnings("ignore")  # If you want to debug remove this
 cwd = os.getcwd()
+
+def get_m(**plot_args):
+    """ Given plot args returns a basemap "axis" with the proper plot args. Edit this function if you want different maps """
+
+    #m = Basemap(projection="ortho", resolution="c", lon_0=-20, lat_0=0, **plot_args)
+    m = Basemap(projection="moll", resolution="c", lon_0=20)
+    m.drawcoastlines()
+    return m
 
 def get_flat_circle(radius, center, step=100):
     """ Returns shapely polygon given radius and center. This is the same as get_circle in Flat_GA. Step is the number of verticies in the polygon, 
@@ -268,10 +277,6 @@ def breed_agents_spher(parent1, parent2):
 
         choice = random.choice([1, 2])
 
-        print(len(parent1_pt))
-        print()
-        print(len(parent2_pts))
-        print('-----------------------------------------')
 
         if choice == 1 or parent2_pts == []:
             child1_center_list.append(parent1_pt)
@@ -580,58 +585,46 @@ def repair_agent_BFGS(
     tupled_optimized = grouper(2, optimized.x)
 
     # Reassigns circle list
-    agent.circle_list = [
-        get_circle(center[0], center[1], agent.fov) for center in tupled_optimized
-    ]
-    agent.remove_irrelavent_circles(region, 0.05, 0.05)
+    agent.circle_list = [get_circle(center[0], center[1], agent.fov) for center in tupled_optimized]
+    #agent.remove_irrelavent_circles(region, 0.05, 0.05)
 
     if debug:
         print("Optimization was {}".format(optimized.success))
 
     if plot:
-        os.mkdir(
-            "repair_frames/generation_{}/agent_{}".format(generation, agent_number)
-        )
+        print(3)
+        os.mkdir("repair_frames/generation_{}/agent_{}".format(generation, agent_number))
         # Plotting guess
         m = get_m()
-        agent.circle_list = [
-            get_circle(center[0], center[1], agent.fov) for center in tupled_guess
-        ]
+        agent.circle_list = [get_circle(center[0], center[1], agent.fov) for center in tupled_guess]
         agent.plot_agent(region, m, fill=False)
         region.draw(m)
         agent.plot_centers(m, 2)
-        plt.savefig(
-            "repair_frames/generation_{}/agent_{}/frame_{}".format(
-                generation, agent_number, "guess"
-            )
-        )
+        plt.savefig("repair_frames/generation_{}/agent_{}/frame_{}".format(generation, agent_number, "guess"))
         plt.close()
 
         # Plotting actual
         m = get_m()
-        agent.circle_list = [
-            get_circle(center[0], center[1], agent.fov) for center in tupled_optimized
-        ]
+        agent.circle_list = [get_circle(center[0], center[1], agent.fov) for center in tupled_optimized]
         agent.plot_agent(region, m, fill=False)
         region.draw(m)
         agent.plot_centers(m, 2)
-        plt.savefig(
-            "repair_frames/generation_{}/agent_{}/frame_{}".format(
-                generation, agent_number, "BFGS optimized"
-            )
-        )
+        plt.savefig("repair_frames/generation_{}/agent_{}/frame_{}".format(generation, agent_number, "BFGS optimized"))
         plt.close()
 
     try:
         if (region.intersection(SphericalPolygon.multi_union(agent.circle_list)).area() / region.area() > 0.98):  # Check if we even need to update
             return True
+        else:
+            return False
     except AssertionError:
         spher_union = SphericalPolygon.multi_union(agent.circle_list)
         intersect = proj_intersection(region, spher_union)
 
         if intersect.area() / region.area() > 0.98:
             return True
-
+        else:
+            return False
 
 # GA part
 def repair_agents(agent_list, region, plot=False, generation=0, guess=False):
@@ -886,23 +879,19 @@ def ga(
     return agent_list
 
 
-dataset = (
-    "design_bns_astro"  # name of dataset ('design_bns_astro' or 'design_bbh_astro')
-)
+dataset = "design_bns_astro"  # name of dataset ('design_bns_astro' or 'design_bbh_astro')
 fov_diameter = 8  # FOV diameter in degrees
 
 # Open sample file, tested on 100
-i = 130
+id = 18
 
 global colors
 colors = ["#ade6e6", "#ade6ad", "#e6ade6", "#e6adad"]
 
-X, Y, Z = convert_fits_xyz(dataset, i)
-inside_point = X[1], Y[1], Z[1]  # A point inside the region
+coords = get_concave_hull(dataset, id)
+lon, lat = zip(*coords[0])
 
-# We need to cluster the points before we convex hull
-region = SphericalPolygon.convex_hull(list(zip(X, Y, Z)))
-
+region = SphericalPolygon.from_lonlat(lon, lat)
 
 # Clearing folder before we add new frames
 if not os.path.exists("{}/frames".format(cwd)):
@@ -934,11 +923,11 @@ population = 5
 generations = 5
 final_agent_list = ga(
     region,
-    6,
+    fov_diameter,
     population,
     generations,
     crossover_scheme='ll',
-    initial_length=8,
+    initial_length=50,
     plot_regions=True,
     plot_crossover=False,
     save_agents=True
