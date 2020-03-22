@@ -7,12 +7,25 @@ from scipy.spatial import ConvexHull
 from ligo.skymap.io import fits
 from ligo.skymap.postprocess import find_greedy_credible_levels
 import healpy as hp
-import math
+from spherical_geometry.polygon import SphericalPolygon
 from scipy.spatial import Delaunay
-
+import geopandas as gpd
+import alphashape
+import cartopy.crs as ccrs
+import pandas as pd
+import time
 from mpl_toolkits.basemap import Basemap
+import os 
 from collections import defaultdict
-
+from astropy.coordinates import SkyCoord
+from astropy.io import fits
+from astropy import units as u
+from ligo.skymap.io import fits
+import ligo.skymap.plot
+from ligo.skymap.postprocess import find_greedy_credible_levels
+from matplotlib.path import Path
+from matplotlib import pyplot as plt
+import numpy as np
 
 def diff(li1, li2):
 
@@ -209,7 +222,7 @@ def generate_random_in_polygon(number, polygon):
             counter += 1
     return list_of_points
 
-
+#Spherical Functions
 def xyz_to_lon_lat(X, Y, Z):
     """ Takes list of X, Y, and Z coordinates and spits out list of lon lat and rho """
 
@@ -317,18 +330,197 @@ def get_convex_hull(pt_lst1, pt_lst2):
 
     return hull_pts
 
+def plot_ligo_style(fits_path, out_path, pointing_lons, pointing_lats):
+    """ Given path to a fits file and centers of points (in lon lat) will plot out the localization map with the 90% greedy credible interval along with the pointings. Note that lons and lats go from 0 to 360 and 0 to 180 respectivly """
 
-global bounding_box
-bounding_box = {
-    "bottom left": (-180, -90),
-    "bottom right": (180, -90),
-    "top right": (180, 90),
-    "top left": (0, 90),
-}
+    m, metadata = fits.read_sky_map(fits_path, nest=None)
+    nside = hp.npix2nside(len(m))
+    ipix = np.argmax(m)
+    lon, lat = hp.pix2ang(nside, ipix, nest=True, lonlat=True)*u.deg
+    # Optional: recenter the map to center skymap in inset:
+    # lat -= 1*u.deg
+    # lon += 3.5*u.deg
+    center = SkyCoord(lon, lat)
 
-# bounding_box = {
-#     "bottom left": (-2, -2),
-#     "bottom right": (2, -2),
-#     "top right": (2, 2),
-#     "top left": (-2, 2),
-# }
+    phis, thetas = np.radians(pointing_lons), np.radians(pointing_lats)
+    ras = np.rad2deg(phis)
+    decs = np.rad2deg(0.5 * np.pi - thetas)
+
+    point_coords = zip(ras, decs)
+
+    cls = 100 * find_greedy_credible_levels(m)
+
+    fig = plt.figure(figsize=(4, 4), dpi=300)
+
+    ax = plt.axes(
+        [0.05, 0.05, 0.9, 0.9],
+        projection='astro globe',
+        center=center)
+
+    ax_inset = plt.axes(
+        [0.59, 0.3, 0.4, 0.4],
+        projection='astro zoom',
+        center=center,
+        radius=15*u.deg)
+
+    for key in ['ra', 'dec']:
+        ax_inset.coords[key].set_ticklabel_visible(False)
+        ax_inset.coords[key].set_ticks_visible(False)
+    ax.coords['ra'].set_ticks(spacing=60*u.deg)
+    ax.grid()
+    ax.mark_inset_axes(ax_inset)
+    ax.connect_inset_axes(ax_inset, 'upper left')
+    ax.connect_inset_axes(ax_inset, 'lower left')
+    ax_inset.scalebar((0.1, 0.1), 5 * u.deg).label()
+    ax_inset.compass(0.9, 0.1, 0.2)
+
+    ax.imshow_hpx(m, cmap='cylon', nested=True)
+    ax.contour_hpx((cls, 'ICRS'), nested=metadata['nest'], colors='k', linewidths=0.5, levels=[90])
+    ax_inset.imshow_hpx(m, cmap='cylon', nested=True)
+    ax_inset.contour_hpx((cls, 'ICRS'), nested=metadata['nest'], colors='k', linewidths=0.5, levels=[90])
+
+    for coord in point_coords:
+        ax_inset.plot(
+            coord[0], coord[1],
+            transform=ax_inset.get_transform('world'),
+            marker=Path.circle(),
+            markersize=33,
+            alpha=0.25,
+            color='blue')
+
+    plt.savefig(out_path, dpi=300, bbox_inches='tight')
+
+def lon_lat_projhull(lon, lat, init_proj=ccrs.AzimuthalEquidistant().proj4_init):
+    """ Given a set of lon and lat points will returns a geodataframe of the concave hull"""
+    
+    df = pd.DataFrame({
+        'Lon' : lon,
+        'Lat' : lat
+    })
+
+    start = time.process_time()  # Timing entire program
+
+
+    geom = [geometry.Point(xy) for xy in zip(df.Lon, df.Lat)]
+    crs = {'init' : 'epsg:4326'}
+    gdf = gpd.GeoDataFrame(df, crs=crs, geometry=geom)
+    gdf_proj = gdf.to_crs(init_proj)
+
+    before = time.process_time()
+    print("Constructing alphashape")
+    alpha_shape = alphashape.alphashape(gdf_proj)
+    print("Alphashape constructed. Run time {}".format(time.process_time() - before))
+    print()
+
+    return alpha_shape
+
+def save_concave_hull(dataset, id):
+    """ Given path to fits data saves the outline as a concave hull """
+    cwd = os.getcwd()
+    lon, lat = make_fits_lonlat("{}/data/{}/{}.fits".format(cwd, dataset, id))
+
+    df = lon_lat_projhull(lon, lat)
+
+    df.to_file("{}/data/{}_shp/{}.shp".format(cwd, dataset, id))
+    
+def get_concave_hull(dataset, id):
+    """ Given a data set and id attemps to return set of lon lat points corresponding to concave hull of object """
+    cwd = os.getcwd()
+    #Checks if we already saved the agent
+    if not os.path.exists("{}/data/{}_shp/{}.shp".format(cwd, dataset, id)):
+        save_concave_hull(dataset, id)
+
+    e = gpd.read_file("{}/data/{}_shp/{}.shp".format(cwd, dataset, id))
+    lon_lat_geom = e.to_crs("epsg:4326")
+    shp = lon_lat_geom.geometry
+    coords = [list(shp.geometry.exterior[row_id].coords) for row_id in range(shp.shape[0])]
+    return coords
+
+def proj_poly(spher_poly, proj=ccrs.AzimuthalEquidistant().proj4_init):
+    """ Given a spherical polygon and a projection, creates a shapely geometry on the plane """
+
+    radec = list(spher_poly.to_radec())
+    if radec == []:
+        return 0
+    lons, lats = radec[0][0], radec[0][1]
+
+    pts = zip(lons, lats)
+
+    coords = proj_points(pts)
+
+    poly = geometry.Polygon(coords)
+    return poly
+
+def inv_proj_poly(poly, init_crs=ccrs.AzimuthalEquidistant().proj4_init, center=None):
+    """ Given shapely polygon will return spherical polygon from inverse projection """
+
+    X, Y = poly.exterior.xy
+    XY = zip(X, Y)
+    coords = inv_proj_points(XY)
+
+    lons, lats = zip(*coords)
+
+    spher_poly = SphericalPolygon.from_lonlat(lons, lats, center=center)
+
+    return spher_poly
+
+def proj_points(points, proj=ccrs.AzimuthalEquidistant().proj4_init):
+    """ Given set of spherical points (lons and lats) will project in projection specified """
+
+    lons, lats = zip(*points)
+
+    df = pd.DataFrame({
+    'Lon' : lons,
+    'Lat' : lats
+    })
+
+    geom = [geometry.Point(xy) for xy in zip(df.Lon, df.Lat)]
+    crs = {'init' : 'epsg:4326'}
+    gdf = gpd.GeoDataFrame(df, crs=crs, geometry=geom)
+    gdf_proj = gdf.to_crs(proj)
+
+    shp = gdf_proj.geometry
+    coords = [(i.x, i.y) for i in shp]
+
+    return coords
+
+def inv_proj_points(points, init_crs=ccrs.AzimuthalEquidistant().proj4_init):
+    """ Given a set of points in projected spaced will return points in spherical space coressponding to those points """
+
+    X, Y = zip(*points)
+    df = pd.DataFrame({
+        'X' : X,
+        'Y' : Y
+    })
+
+    geom = [geometry.Point(xy) for xy in zip(df.X, df.Y)]
+    gdf = gpd.GeoDataFrame(df, crs=init_crs, geometry=geom)
+
+    lon_lat_geom = gdf.to_crs("epsg:4326")
+    shp = lon_lat_geom.geometry
+    coords = [(i.x, i.y) for i in shp]
+
+    return coords
+
+def spherical_unary_union(polygon_list):
+    """ Given a list of spherical polygon returns the unary union of them """
+
+    big_poly = polygon_list[0]
+    for poly in polygon_list[1:]:
+        big_poly = big_poly.union(poly)
+    
+    return big_poly
+
+
+def proj_intersection(spher_poly1, spher_poly2, proj=ccrs.AzimuthalEquidistant().proj4_init):
+    """ The spherical geometry module currently has a bug where it will not correctly find the intersection between polygons sometimes. See https://github.com/spacetelescope/spherical_geometry/issues/168. This is a function which projects to 2D (not ideal I know) and returns a new polygon which is the intersection """
+
+    poly1 = proj_poly(spher_poly1, proj=proj)
+    poly2 = proj_poly(spher_poly2, proj=proj)
+
+    intersec = poly1.intersection(poly2)
+    inside_pt = generate_random_in_polygon(1, intersec)[0]
+
+    ret = inv_proj_poly(intersec, center=inside_pt)
+
+    return ret

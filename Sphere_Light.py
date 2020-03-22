@@ -1,6 +1,6 @@
 import healpy as hp
 import numpy as np
-import math
+import os
 from shapely import geometry
 import scipy.optimize as optimize
 from scipy.spatial import ConvexHull
@@ -8,18 +8,29 @@ from shapely.ops import unary_union
 from spherical_geometry.polygon import SphericalPolygon
 from misc_functions import *
 import matplotlib.pyplot as plt
+import warnings
+
+warnings.filterwarnings("ignore")  # If you want to debug remove thi
+global cwd
+cwd = os.getcwd()
+
+
+
+def get_m(**plot_args):
+    """ Given plot args returns a basemap "axis" with the proper plot args. Edit this function if you want different maps """
+
+    #m = Basemap(projection="ortho", resolution="c", lon_0=-20, lat_0=0, **plot_args)
+    m = Basemap(projection="moll", resolution="c", lon_0=0)
+    m.drawcoastlines()
+    return m
 
 
 def get_circle(phi, theta, fov, step=16):
     """ Returns SphericalPolygon given FOV and center of the polygon """
 
     radius = fov / 2
-    lons = [
-        phi + radius * math.cos(angle) for angle in np.linspace(0, 2 * math.pi, step)
-    ]
-    lats = [
-        theta + radius * math.sin(angle) for angle in np.linspace(0, 2 * math.pi, step)
-    ]
+    lons = [phi + radius * np.cos(angle) for angle in np.linspace(0, 2 * np.pi, step)]
+    lats = [theta + radius * np.sin(angle) for angle in np.linspace(0, 2 * np.pi, step)]
     ret = SphericalPolygon.from_radec(lons, lats)
     return ret
 
@@ -46,6 +57,22 @@ def spherical_poly_to_poly(poly):
     poly = geometry.Polygon(list(zip(lons, lats)))
     return poly
 
+def poly_to_spherical_poly(poly):
+    """ Given shapely polygon (lon lat) returns spherical polygon """
+
+    lons, lats = poly.exterior.coords.xy[0], poly.exterior.coords.xy[1]
+    ret = SphericalPolygon.from_radec(lons, lats)
+
+    return ret
+
+def spherical_poly_to_poly(poly):
+    """ Converts a spherical polygon to a lon lat polygon """
+
+    radec = list(poly.to_radec())
+    lons, lats = radec[0][0], radec[0][1]
+    poly = geometry.Polygon(list(zip(lons, lats)))
+    return poly
+
 
 def poly_to_spherical_poly(poly):
     """ Given shapely polygon (lon lat) returns spherical polygon """
@@ -55,9 +82,7 @@ def poly_to_spherical_poly(poly):
 
     return ret
 
-
 def get_center(circle):
-
     """ Given circle returns ra dec of center of circle by projection """  # NOTE needs fixing 360 --> 0
 
     radec = list(circle.to_radec())
@@ -65,69 +90,6 @@ def get_center(circle):
     poly = geometry.Polygon(list(zip(lons, lats)))
     center = poly.centroid
     return (center.x, center.y)
-
-
-def double_intersection(polygon_list):
-
-    """ Returns intersection between polygons in polygon_list and the area of their intersection. Perhaps upgrade to cascaded_union in future if program is taking too long this would be a major speed up """
-
-    intersections, already_checked = [], []
-    for polygon in polygon_list:
-        already_checked.append(
-            polygon
-        )  # We don't need to check the polygons we already intersected with
-        try:
-            union_of_polys = SphericalPolygon.multi_union(
-                diff(polygon_list, already_checked)
-            )
-        except AssertionError:  # No intersection
-            continue
-
-        single_intersection = polygon.intersection(union_of_polys)
-        intersections.append(single_intersection)
-
-    intersection = SphericalPolygon.multi_union(intersections)
-    intersection_area = intersection.area()
-    total_area = SphericalPolygon.multi_union(polygon_list).area()
-    frac_intersection = intersection_area / total_area
-
-    return intersections, frac_intersection
-
-
-def intersection_region(region, polygon_list):
-
-    """ Returns regions of intersection between the polygon_list and the region. Also returns the non intersection between polygon_list and the region. It will also return the fraction which the polygon list has covered """
-
-    outside = region.invert_polygon()
-
-    try:
-        interior_intersections = [
-            region.intersection(polygon) for polygon in polygon_list
-        ]
-    except AssertionError:
-        interior_intersections = [
-            proj_intersection(region, polygon) for polygon in polygon_list
-        ]
-    interior_area = powerful_union_area(interior_intersections)
-    interior_fraction = interior_area / region.area()
-
-    try:
-        exterior_intersections = [
-            polygon.intersection(outside) for polygon in polygon_list
-        ]
-    except AssertionError:
-        exterior_intersections = [
-            proj_intersection(outside, polygon) for polygon in polygon_list
-        ]
-    exterior_area = powerful_union_area(exterior_intersections)
-    exterior_fraction = exterior_area / (4 * math.pi)
-
-    return (
-        interior_intersections,
-        exterior_intersections,
-        interior_fraction,
-        exterior_fraction,
-    )
 
 
 def get_flat_circle(radius, center, step=100):
@@ -155,93 +117,16 @@ class Agent:
 
         if region != None:
             """ Generates random circles inside the region for an inital guess """
-            tupled = generate_random_in_polygon(
-                self.length, spherical_poly_to_poly(region)
-            )
-            self.circle_list = [get_circle(i[0], i[1], self.fov) for i in tupled]
+            poly = proj_poly(region)
+            pts = generate_random_in_polygon(self.length, poly)
+
+            inv_proj = inv_proj_poly(poly)
+            inv_proj_pts = inv_proj_points(pts)
+            self.circle_list = [get_circle(i[0], i[1], self.fov) for i in inv_proj_pts]
             self.update_centers()
-            self.remove_irrelavent_circles(region, 0.05, 0.05)
 
     def update_agent(self):
-        self.remove_irrelavent_circles(region, 0.05, 0.05)
         self.length = len(self.circle_list)
-
-    def get_intersections(self, region):
-        """ Returns all types of intersections. self_intersection, self_intersection_fraction, region_intersection, region_nonintersection, region_intersection_fraction """
-
-        self_intersection, self_intersection_fraction = double_intersection(
-            self.circle_list
-        )
-
-        (
-            region_intersection,
-            region_nonintersection,
-            region_intersection_fraction,
-            region_nonintersection_fraction,
-        ) = intersection_region(region, self.circle_list)
-
-        return (
-            self_intersection,
-            self_intersection_fraction,
-            region_intersection,
-            region_nonintersection,
-            region_intersection_fraction,
-            region_nonintersection_fraction,
-        )
-
-    def remove_irrelavent_circles(self, region, threshold_region, threshold_self):
-        """ Removes all circles in circle_list that intrsect the region less than threshold returns circles that were removed """
-
-        original_circle_list = self.circle_list
-
-        kept_circles, removed_circles = [], []
-        for circle in self.circle_list:
-
-            try:
-                frac = circle.intersection(region).area() / circle.area()
-            except AssertionError:  # Wrapper in case for spherical geometry failure
-                intersect = proj_intersection(region, circle)
-                frac = intersect.area() / circle.area()
-
-            if frac < threshold_region:
-                removed_circles.append(circle)
-            else:
-                kept_circles.append(circle)
-
-        self.circle_list = kept_circles
-
-        kept_circles, removed_circles = [], []
-        for circle in self.circle_list:
-            rem_circle_list = self.circle_list[
-                :
-            ]  # Removes circle in list copy so we can check how much it intersects other circles
-            rem_circle_list = [
-                circle for circle in rem_circle_list if circle not in removed_circles
-            ]
-            rem_circle_list.remove(circle)
-
-            double_intersection_lst, _ = double_intersection(rem_circle_list)
-            double_intersection_union = SphericalPolygon.multi_union(
-                double_intersection_lst
-            )
-            frac = (
-                np.abs(
-                    double_intersection_union.intersection(circle).area()
-                    - circle.area()
-                )
-                / circle.area()
-            )
-
-            if frac < threshold_self:
-                removed_circles.append(circle)
-            else:
-                kept_circles.append(circle)
-
-        self.circle_list = kept_circles
-
-        return [
-            circle for circle in original_circle_list if circle not in self.circle_list
-        ]
 
     def update_centers(self):
         """ sets a list of centers given polyogn centers """
@@ -265,22 +150,32 @@ def proj_intersection_area_inv(center_array, region, fov):
     return soft_inv
 
 
+# def proj_intersection_area_inv(center_array, region, fov):
+#     """ Returns inverse of area itnersection with region but projectiosn to lon lat space """
+
+#     real_centers = grouper(2, center_array)
+#     polygon_list = [get_circle(center[0], center[1], fov) for center in real_centers]
+
+#     projection = ccrs.AlbersEqualArea().proj4_init
+
+#     proj_circles = [proj_poly(poly, proj=projection) for poly in polygon_list]
+#     proj_region = proj_poly(region, proj=projection)
+
+
+
+#     r = proj_region.intersection(unary_union(proj_region)).area
+#     # We don't want hard inverse because dividing by 0 will error out, so we use a soft inverse
+#     s = 3
+#     soft_inv = 1 / ((1 + (r ** s)) ** (1 / s))
+
+#     return soft_inv
+
+
+
 def repair_agent_BFGS(agent, region, debug=False):
     """ Given agent uses quasi newton secant update to rearrange circles in agent to cover the region """
 
-    try:
-        if (
-            region.intersection(SphericalPolygon.multi_union(agent.circle_list)).area()
-            / region.area()
-            > 0.98
-        ):  # Check if we even need to update
-            return True
-    except AssertionError:
-        spher_union = SphericalPolygon.multi_union(agent.circle_list)
-        intersect = proj_intersection(region, spher_union)
-
-        if intersect.area() / region.area() > 0.98:
-            return True
+    #NOTE Insert check if we need to update here
 
     agent.update_centers()
 
@@ -288,76 +183,62 @@ def repair_agent_BFGS(agent, region, debug=False):
     tupled = [(c[0], c[1]) for c in agent.center_list]
     guess = [item for sublist in tupled for item in sublist]
 
-    optimized = optimize.minimize(
-        proj_intersection_area_inv, guess, args=(region, agent.fov), method="BFGS"
-    )
-
+    optimized = optimize.minimize(proj_intersection_area_inv, guess, args=(region, agent.fov), method="BFGS")
     tupled_guess = grouper(2, guess)
     tupled_optimized = grouper(2, optimized.x)
 
     # Reassigns circle list
-    agent.circle_list = [
-        get_circle(center[0], center[1], agent.fov) for center in tupled_optimized
-    ]
-    agent.remove_irrelavent_circles(region, 0.03, 0.03)
+    agent.circle_list = [get_circle(center[0], center[1], agent.fov) for center in tupled_optimized]
+    union = spherical_unary_union(agent.circle_list)
+    intersec = region.intersection(union)
 
     if debug:
         print("Optimization was {}".format(optimized.success))
 
-    try:
-        if (
-            region.intersection(SphericalPolygon.multi_union(agent.circle_list)).area()
-            / region.area()
-            > 0.98
-        ):  # Check if we even need to update
-            return True
 
-    except AssertionError:
-        spher_union = SphericalPolygon.multi_union(agent.circle_list)
-        intersect = proj_intersection(region, spher_union)
+    print(region.area(), intersec.area())
 
-        if intersect.area() / region.area() > 0.98:
-            return True
+    if region.area() - intersec.area() < .001:
+        return True
+    else:
+        return False
 
-
-dataset = (
-    "design_bns_astro"  # name of dataset ('design_bns_astro' or 'design_bbh_astro')
-)
-fov_diameter = 8  # FOV diameter in degrees
+dataset = "design_bns_astro"  # name of dataset ('design_bns_astro' or 'design_bbh_astro')
+id = 18
+fov = 8  # FOV diameter in degrees
 
 # Open sample file, tested on 100
-i = 130
-fov = 8
+coords = get_concave_hull(dataset, id)
+
+lon, lat = zip(*coords[0])
+
+lonlat_poly = geometry.Polygon(list(zip(lon, lat)))
+inside_pt = generate_random_in_polygon(1, lonlat_poly)[0]
+
+region = SphericalPolygon.from_lonlat(lon, lat, center=inside_pt)
 
 
-area_list = []
-for i in range(0, 100):
-    X, Y, Z = convert_fits_xyz(dataset, i)
-    inside_point = X[1], Y[1], Z[1]  # A point inside the region
-
-    # We need to cluster the points before we convex hull
-    region = SphericalPolygon.convex_hull(list(zip(X, Y, Z)))
-
-    area_list.append(region.area())
-print(area_list)
-# If the regular SphericalPolygon convex hull is not working, use a projected convex hull as follows:
-# ras, decs = convert_fits_xyz(dataset, i)
-# points = np.asarray([(ra, dec) for ra, dec in zip(ras, decs)])
-# hull = ConvexHull(points)
-# hull_pts = points[hull.vertices, :]
-# hull_ra, hull_dec = zip(*hull_pts)
-# hull_lon, hull_lat = np.asarray(hull_ra) - 180, 90 - np.asarray(hull_dec)
-# region = SphericalPolygon.from_radec(hull_lon, hull_lat)
-
-intial_guess = 6
+intial_guess = 15
 max_circles = 100
 tmp = []
 for length in range(intial_guess, max_circles):
     agent = Agent(fov=fov, length=length, region=region)
 
     success = repair_agent_BFGS(agent, region)
+
+    m = get_m()
+    for circle in agent.circle_list:
+        circle.draw(m, c='b', linewidth=1)
+    region.draw(m, c='r', linewidth=1)
+    plt.savefig(f"{cwd}/repair_frames/{length}.png")
+    plt.close()
+
     if success:
-        tmp.append(length)
+        successful_agent = agent
         break
 
-    plt.show()
+
+path_to_fits = f"{cwd}/data/{dataset}/{id}.fits"
+lons, lats = zip(*successful_agent.center_list)
+lats = [i + 90 for i in lats]
+plot_ligo_style(path_to_fits, f"{cwd}/frames/{id}", lons, lats)

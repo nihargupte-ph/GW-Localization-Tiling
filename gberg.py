@@ -341,7 +341,7 @@ fov_radius = fov_diameter / 2
 # data_file.write('coinc_event_id\tpointings\n')
 
 # Open sample file, tested on 100
-i = 18
+i = 103
 
 tmp = []
 
@@ -443,7 +443,7 @@ print()
 print(n)
 
 #hp.orthview(n, nest=True, title='Optimized Coverage', rot=(20, 0, 0), half_sky=True)
-hp.mollview(n, nest=True, title='Optimized Coverage', rot=(20, 0, 0))
+hp.mollview(n, nest=True, title='Optimized Coverage', rot=(0, 0, 0))
 hp.projscatter(-180, -90, c='r', lonlat=True)
 hp.projscatter(-180, 90, c='b', lonlat=True)
 hp.projscatter(180, -90, c='g', lonlat=True)

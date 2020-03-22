@@ -5,7 +5,6 @@ import pickle
 import shutil
 from scipy.spatial import SphericalVoronoi
 from scipy.spatial import Voronoi
-import math
 from shapely import geometry
 import scipy.optimize as optimize
 from shapely.ops import unary_union
@@ -20,9 +19,6 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import os
 import time
 import warnings
-from Sphere_GA_Proj import get_concave_hull
-
-random.seed(2)
 
 warnings.filterwarnings("ignore")  # If you want to debug remove this
 cwd = os.getcwd()
@@ -31,7 +27,7 @@ def get_m(**plot_args):
     """ Given plot args returns a basemap "axis" with the proper plot args. Edit this function if you want different maps """
 
     #m = Basemap(projection="ortho", resolution="c", lon_0=-20, lat_0=0, **plot_args)
-    m = Basemap(projection="moll", resolution="c", lon_0=20)
+    m = Basemap(projection="moll", resolution="c", lon_0=0)
     m.drawcoastlines()
     return m
 
@@ -68,10 +64,10 @@ def get_circle(phi, theta, fov, step=16):
 
     radius = fov / 2
     lons = [
-        phi + radius * math.cos(angle) for angle in np.linspace(0, 2 * math.pi, step)
+        phi + radius * np.cos(angle) for angle in np.linspace(0, 2 * np.pi, step)
     ]
     lats = [
-        theta + radius * math.sin(angle) for angle in np.linspace(0, 2 * math.pi, step)
+        theta + radius * np.sin(angle) for angle in np.linspace(0, 2 * np.pi, step)
     ]
     ret = SphericalPolygon.from_radec(lons, lats)
     return ret
@@ -86,7 +82,7 @@ def powerful_union_area(polygon_list):
             continue
 
         try:  # This is where the problem arises sometimes union results in nan which messes up the rest of the union
-            if math.isnan(big_poly.union(poly).area()):
+            if np.isnan(big_poly.union(poly).area()):
                 extra_area += poly.area()
                 continue
         except AssertionError:
@@ -105,7 +101,6 @@ def get_center(circle):
     poly = geometry.Polygon(list(zip(lons, lats)))
     center = poly.centroid
     return (center.x, center.y)
-
 
 def spherical_poly_to_poly(poly):
     """ Converts a spherical polygon to a lon lat polygon """
@@ -181,7 +176,7 @@ def intersection_region(region, polygon_list):
             proj_intersection(outside, polygon) for polygon in polygon_list
         ]
     exterior_area = powerful_union_area(exterior_intersections)
-    exterior_fraction = exterior_area / (4 * math.pi)
+    exterior_fraction = exterior_area / (4 * np.pi)
 
     return (
         interior_intersections,
@@ -191,28 +186,10 @@ def intersection_region(region, polygon_list):
     )
 
 
-def proj_intersection(spher_poly1, spher_poly2):
-    """ The spherical geometry module currently has a bug where it will not correctly find the intersection between polygons sometimes. See https://github.com/spacetelescope/spherical_geometry/issues/168. This is a function which projects to 2D (not ideal I know) and returns a new polygon which is the intersection """
-
-    poly1 = spherical_poly_to_poly(spher_poly1)
-    poly2 = spherical_poly_to_poly(spher_poly2)
-    poly1 = poly1.buffer(0)
-    poly2 = poly2.buffer(0)
-
-    intersec = poly1.intersection(poly2)
-
-    ret = poly_to_spherical_poly(intersec)
-
-    return ret
-
-
 def breed_agents_ll(parent1, parent2):
     """ Breeds agents based on their voronoi diagrams. Takes two parents as input and spits out 2 children as output """
-    parent1.update_centers()  # Even though voronoi updates the centers for readability
-    parent2.update_centers()
-
-    parent1.update_voronoi_ll()
-    parent2.update_voronoi_ll()
+    parent1.update_agent()
+    parent2.update_agent()
 
     child1_center_list = []
     for i, vor_poly in enumerate(parent1.voronoi_list_ll):
@@ -331,14 +308,19 @@ class Agent:
 
         if region != None:
             """ Generates random circles inside the region for an inital guess """
-            tupled = generate_random_in_polygon(
-                self.length, spherical_poly_to_poly(region)
-            )
-            self.circle_list = [get_circle(i[0], i[1], self.fov) for i in tupled]
+            poly = proj_poly(region)
+            pts = generate_random_in_polygon(self.length, poly)
+
+            inv_proj = inv_proj_poly(poly)
+            inv_proj_pts = inv_proj_points(pts)
+            self.circle_list = [get_circle(i[0], i[1], self.fov) for i in inv_proj_pts]
             self.update_centers()
 
     def update_agent(self):
         #self.remove_irrelavent_circles(region, 0.05, 0.05)
+        self.update_centers()
+        self.update_voronoi()
+        self.update_voronoi_ll()
         self.length = len(self.circle_list)
 
     def get_intersections(self, region):
@@ -586,13 +568,13 @@ def repair_agent_BFGS(
 
     # Reassigns circle list
     agent.circle_list = [get_circle(center[0], center[1], agent.fov) for center in tupled_optimized]
+    agent.update_centers()
     #agent.remove_irrelavent_circles(region, 0.05, 0.05)
 
     if debug:
         print("Optimization was {}".format(optimized.success))
 
     if plot:
-        print(3)
         os.mkdir("repair_frames/generation_{}/agent_{}".format(generation, agent_number))
         # Plotting guess
         m = get_m()
@@ -646,9 +628,7 @@ def repair_agents(agent_list, region, plot=False, generation=0, guess=False):
     repaired_agent_list = []
     for i, agent in enumerate(agent_list):
         printProgressBar(i, len(agent_list))
-        if repair_agent_BFGS(
-            agent, region, plot=plot, generation=generation, agent_number=i, debug=False
-        ):
+        if repair_agent_BFGS(agent, region, plot=plot, generation=generation, agent_number=i, debug=False):
             repaired_agent_list.append(agent)
 
     return repaired_agent_list
@@ -786,6 +766,8 @@ def ga(
     crossover_scheme=None,
     plot_crossover=False,
     save_agents=False,
+    plotting_scheme='basemap',
+    dataset_id=None,
 ):
 
     start = time.process_time()  # Timing entire program
@@ -833,11 +815,22 @@ def ga(
         os.mkdir("{}/frames/generation_{}".format(cwd, generation))
 
         for i, agent in enumerate(agent_list):
-            m = get_m()
-            agent.plot_agent(region, m, zorder=2, fill=False)
-            region.draw(m)
-            plt.savefig("frames/generation_{}/agent_{}".format(generation, i))
-            plt.close()
+            if plotting_scheme == 'basemap':
+                m = get_m()
+                agent.plot_agent(region, m, zorder=2, fill=False)
+                region.draw(m)
+                plt.savefig("frames/generation_{}/agent_{}".format(generation, i))
+                plt.close()
+            elif plotting_scheme == 'ligo':
+                if dataset_id == None:
+                    raise Exception("If you want to use the ligo plotting you must specify the dataset and id")
+                
+                dataset, id = zip(*dataset_id)
+                path_to_fits = f"{cwd}/data/{dataset}/{id}.fits"
+                lons, lats = zip(*agent.center_list)
+                lats = [i + 90 for i in lats]
+                plot_ligo_style(path_to_fits, f"{cwd}/frames/generation_{generation}_agent_{i}", lons, lats)
+
 
         print("frame saved in frames/generation_{}. Run time {}".format(generation, time.process_time() - before))
         print()
@@ -891,7 +884,11 @@ colors = ["#ade6e6", "#ade6ad", "#e6ade6", "#e6adad"]
 coords = get_concave_hull(dataset, id)
 lon, lat = zip(*coords[0])
 
-region = SphericalPolygon.from_lonlat(lon, lat)
+lonlat_poly = geometry.Polygon(list(zip(lon, lat)))
+inside_pt = generate_random_in_polygon(1, lonlat_poly)[0]
+
+region = SphericalPolygon.from_lonlat(lon, lat, center=inside_pt)
+
 
 # Clearing folder before we add new frames
 if not os.path.exists("{}/frames".format(cwd)):
@@ -927,8 +924,10 @@ final_agent_list = ga(
     population,
     generations,
     crossover_scheme='ll',
-    initial_length=50,
+    initial_length=8,
     plot_regions=True,
     plot_crossover=False,
-    save_agents=True
+    save_agents=True,
+    plotting_scheme='ligo',
+    dataset_id=(dataset, id)
 )
