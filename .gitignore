@@ -13,4 +13,7 @@ repair_frames/*
 *.cpg
 *.dbf
 *.prj
+*.pdf
 *.shx
+Testing.ipynb
+*.pdf

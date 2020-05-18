@@ -14,8 +14,9 @@ import alphashape
 import cartopy.crs as ccrs
 import pandas as pd
 import time
+from sklearn.cluster import DBSCAN
 from mpl_toolkits.basemap import Basemap
-import os 
+import os
 from collections import defaultdict
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
@@ -27,8 +28,8 @@ from matplotlib.path import Path
 from matplotlib import pyplot as plt
 import numpy as np
 
-def diff(li1, li2):
 
+def diff(li1, li2):
     """ Helper function which returns the difference between two lists """
 
     li_dif = [i for i in li1 + li2 if i not in li1 or i not in li2]
@@ -140,7 +141,7 @@ def voronoi_polygons(voronoi, diameter):
         length = 2 * diameter / np.linalg.norm(dir_j + dir_k)
 
         # Polygon consists of finite part plus an extra edge.
-        finite_part = voronoi.vertices[region[inf + 1 :] + region[:inf]]
+        finite_part = voronoi.vertices[region[inf + 1:] + region[:inf]]
         extra_edge = [
             voronoi.vertices[j] + dir_j * length,
             voronoi.vertices[k] + dir_k * length,
@@ -165,13 +166,13 @@ def generatePolygon(ctrX, ctrY, aveRadius, irregularity, spikeyness, numVerts):
     Returns a list of vertices, in CCW order.
     """
 
-    irregularity = clip(irregularity, 0, 1) * 2 * math.pi / numVerts
+    irregularity = clip(irregularity, 0, 1) * 2 * np.pi / numVerts
     spikeyness = clip(spikeyness, 0, 1) * aveRadius
 
     # generate n angle steps
     angleSteps = []
-    lower = (2 * math.pi / numVerts) - irregularity
-    upper = (2 * math.pi / numVerts) + irregularity
+    lower = (2 * np.pi / numVerts) - irregularity
+    upper = (2 * np.pi / numVerts) + irregularity
     sum = 0
     for i in range(numVerts):
         tmp = random.uniform(lower, upper)
@@ -179,17 +180,17 @@ def generatePolygon(ctrX, ctrY, aveRadius, irregularity, spikeyness, numVerts):
         sum = sum + tmp
 
     # normalize the steps so that point 0 and point n+1 are the same
-    k = sum / (2 * math.pi)
+    k = sum / (2 * np.pi)
     for i in range(numVerts):
         angleSteps[i] = angleSteps[i] / k
 
     # now generate the points
     points = []
-    angle = random.uniform(0, 2 * math.pi)
+    angle = random.uniform(0, 2 * np.pi)
     for i in range(numVerts):
         r_i = clip(random.gauss(aveRadius, spikeyness), 0, 2 * aveRadius)
-        x = ctrX + r_i * math.cos(angle)
-        y = ctrY + r_i * math.sin(angle)
+        x = ctrX + r_i * np.cos(angle)
+        y = ctrY + r_i * np.sin(angle)
         points.append((0.01 * int(x), 0.01 * int(y)))
 
         angle = angle + angleSteps[i]
@@ -209,7 +210,6 @@ def clip(x, min, max):
 
 
 def generate_random_in_polygon(number, polygon):
-
     """ Given a number of points generate that many random points inside a polygon """
 
     list_of_points = []
@@ -222,12 +222,14 @@ def generate_random_in_polygon(number, polygon):
             counter += 1
     return list_of_points
 
-#Spherical Functions
+# Spherical Functions
+
+
 def xyz_to_lon_lat(X, Y, Z):
     """ Takes list of X, Y, and Z coordinates and spits out list of lon lat and rho """
 
-    phi = [math.degrees(np.arctan(y / x)) for x, y in zip(X, Y)]
-    theta = [math.degrees(np.arccos(z / math.sqrt((x ** 2) + (y ** 2) + (z ** 2)))) - 90 for x, y, z in zip(X, Y, Z)]
+    phi = [np.degrees(np.arctan(y / x)) for x, y in zip(X, Y)]
+    theta = [np.degrees(np.arccos(z / np.sqrt((x ** 2) + (y ** 2) + (z ** 2)))) - 90 for x, y, z in zip(X, Y, Z)]
     rho = [x ** 2 + y ** 2 + z ** 2 for x, y, z in zip(X, Y, Z)]
 
     return phi, theta, rho
@@ -255,7 +257,6 @@ def removal_copy(lst, x):
 
 
 def convert_fits_xyz(dataset, number, nested=True, nside=None):
-
     """ Given a fits file converts into xyz point """
 
     # Extracts data from fits file
@@ -287,11 +288,12 @@ def convert_fits_xyz(dataset, number, nested=True, nside=None):
 
     return x, y, z
 
+
 def make_fits_lonlat(path, nested=True, nside=None):
     """ Returns lon lat of given fits file """
 
     m, metadata = fits.read_sky_map(path, nest=None)
-    
+
     """	
     m is array with pixel probabilities	
     rad input in degrees	
@@ -321,17 +323,19 @@ def make_fits_lonlat(path, nested=True, nside=None):
 
     return lon, lat
 
+
 def get_convex_hull(pt_lst1, pt_lst2):
     """ Given 2 lists of points return convex hull of the points """
 
     points = np.array(list(zip(pt_lst1, pt_lst2)))
     hull = ConvexHull(points)
-    hull_pts = list(zip(points[hull.vertices,0], points[hull.vertices,1]))
+    hull_pts = list(zip(points[hull.vertices, 0], points[hull.vertices, 1]))
 
     return hull_pts
 
-def plot_ligo_style(fits_path, out_path, pointing_lons, pointing_lats):
-    """ Given path to a fits file and centers of points (in lon lat) will plot out the localization map with the 90% greedy credible interval along with the pointings. Note that lons and lats go from 0 to 360 and 0 to 180 respectivly """
+
+def plot_ligo_style(fits_path, pointing_lons, pointing_lats):
+    """ Given path to a fits file and centers of points (in lon lat) will plot out the localization map with the 90% greedy credible interval along with the pointings. Note that lons and lats go from 0 to 360 and 0 to 180 respectivly. Note that this only works with a FOV of 8 """
 
     m, metadata = fits.read_sky_map(fits_path, nest=None)
     nside = hp.npix2nside(len(m))
@@ -357,84 +361,144 @@ def plot_ligo_style(fits_path, out_path, pointing_lons, pointing_lats):
         projection='astro globe',
         center=center)
 
-    ax_inset = plt.axes(
-        [0.59, 0.3, 0.4, 0.4],
-        projection='astro zoom',
-        center=center,
-        radius=15*u.deg)
 
     for key in ['ra', 'dec']:
-        ax_inset.coords[key].set_ticklabel_visible(False)
-        ax_inset.coords[key].set_ticks_visible(False)
+        ax.coords[key].set_ticklabel_visible(False)
+        ax.coords[key].set_ticks_visible(False)
     ax.coords['ra'].set_ticks(spacing=60*u.deg)
     ax.grid()
-    ax.mark_inset_axes(ax_inset)
-    ax.connect_inset_axes(ax_inset, 'upper left')
-    ax.connect_inset_axes(ax_inset, 'lower left')
-    ax_inset.scalebar((0.1, 0.1), 5 * u.deg).label()
-    ax_inset.compass(0.9, 0.1, 0.2)
 
     ax.imshow_hpx(m, cmap='cylon', nested=True)
     ax.contour_hpx((cls, 'ICRS'), nested=metadata['nest'], colors='k', linewidths=0.5, levels=[90])
-    ax_inset.imshow_hpx(m, cmap='cylon', nested=True)
-    ax_inset.contour_hpx((cls, 'ICRS'), nested=metadata['nest'], colors='k', linewidths=0.5, levels=[90])
+
 
     for coord in point_coords:
-        ax_inset.plot(
+        ax.plot(
             coord[0], coord[1],
-            transform=ax_inset.get_transform('world'),
+            transform=ax.get_transform('world'),
             marker=Path.circle(),
             markersize=33,
             alpha=0.25,
             color='blue')
 
-    plt.savefig(out_path, dpi=300, bbox_inches='tight')
+
 
 def lon_lat_projhull(lon, lat, init_proj=ccrs.AzimuthalEquidistant().proj4_init):
-    """ Given a set of lon and lat points will returns a geodataframe of the concave hull"""
+    """ Given a set of lon and lat points will returns a geodataframe of the concave hull. It will either be a multipolygon or a polygon depending on how many different clusters there are """
+
+    #Computing DBSCAN
+    X = np.c_[lon, lat]
+    db = DBSCAN(eps=1, min_samples=100).fit(X)
+
+    core_samples_mask = np.zeros_like(db.labels_, dtype=bool)
+    core_samples_mask[db.core_sample_indices_] = True
+    labels = db.labels_
+
+    # Number of clusters in labels, ignoring noise if present.
+    n_clusters_ = len(set(labels)) - (1 if -1 in labels else 0)
+    n_noise_ = list(labels).count(-1)
+
+    # Black removed and is used for noise instead.
+    unique_labels = set(labels)
+    clustered_pts = []
+    for k in unique_labels:
+
+        class_member_mask = (labels == k)
+
+        xy = X[class_member_mask & core_samples_mask]
+        tmp = np.c_[xy[:, 0], xy[:,1]]
+        clustered_pts.append(tmp)
+
+    print(f"Number of clustered maps {len(clustered_pts)}")
     
-    df = pd.DataFrame({
-        'Lon' : lon,
-        'Lat' : lat
-    })
-
-    start = time.process_time()  # Timing entire program
+    if len(clustered_pts) == 1:
+        clustered_pts = [np.c_[lon, lat]]
 
 
-    geom = [geometry.Point(xy) for xy in zip(df.Lon, df.Lat)]
-    crs = {'init' : 'epsg:4326'}
-    gdf = gpd.GeoDataFrame(df, crs=crs, geometry=geom)
-    gdf_proj = gdf.to_crs(init_proj)
+    # #For testing we got the right clusters
+    # def get_m(**plot_args):
+    #     """ Given plot args returns a basemap "axis" with the proper plot args. Edit this function if you want different maps """
 
-    before = time.process_time()
-    print("Constructing alphashape")
-    alpha_shape = alphashape.alphashape(gdf_proj)
-    print("Alphashape constructed. Run time {}".format(time.process_time() - before))
-    print()
+    #     #m = Basemap(projection="ortho", resolution="c", lon_0=-20, lat_0=0, **plot_args)
+    #     m = Basemap(projection="moll", resolution="c", lon_0=0)
+    #     m.drawcoastlines()
+    #     return m
+    # m = get_m()
+    # for i, pts in enumerate(clustered_pts):
+    #     if len(pts) == 0:
+    #         break
+    #     x, y = zip(*pts)
+    #     x, y = m(x, y)
+    #     m.scatter(x, y, c=np.random.rand(3,))
+    # plt.show()
+        
+    alpha_shape_lst = []
+    for i, pts in enumerate(clustered_pts):
 
-    return alpha_shape
+        if pts == []:
+            break
+
+        if len(pts) == 0:
+            break
+
+        clustered_lons, clustered_lats = zip(*pts)
+
+        geom = [geometry.Point(xy) for xy in zip(clustered_lons, clustered_lats)]
+        crs = {'init': 'epsg:4326'}
+        gdf = gpd.GeoDataFrame(crs=crs, geometry=geom)
+        gdf_proj = gdf.to_crs(init_proj)
+
+        before = time.process_time()
+        print("Constructing alphashape {}".format(i+1))
+        alpha_shape = alphashape.alphashape(gdf_proj)
+        try:
+            if alpha_shape == None:
+                print("Not enough coordinates to construct alphashape. Run time {}".format(time.process_time() - before))
+                continue
+        except ValueError:
+            pass
+
+        alpha_shape_lst.append(alpha_shape)
+        print("Alphashape constructed. Run time {}".format(time.process_time() - before))
+        print()
+
+    return alpha_shape_lst
 
 def save_concave_hull(dataset, id):
     """ Given path to fits data saves the outline as a concave hull """
     cwd = os.getcwd()
     lon, lat = make_fits_lonlat("{}/data/{}/{}.fits".format(cwd, dataset, id))
 
-    df = lon_lat_projhull(lon, lat)
+    df_lst = lon_lat_projhull(lon, lat)
+    os.mkdir(f"{cwd}/data/{dataset}_shp/{id}")
+    for i, df in enumerate(df_lst):
+        df.to_file("{}/data/{}_shp/{}/{}.shp".format(cwd, dataset, id, i))
 
-    df.to_file("{}/data/{}_shp/{}.shp".format(cwd, dataset, id))
-    
-def get_concave_hull(dataset, id):
+
+def get_concave_hull(dataset, id, new=False):
     """ Given a data set and id attemps to return set of lon lat points corresponding to concave hull of object """
     cwd = os.getcwd()
-    #Checks if we already saved the agent
-    if not os.path.exists("{}/data/{}_shp/{}.shp".format(cwd, dataset, id)):
+    # Checks if we already saved the agent
+    if not os.path.exists("{}/data/{}_shp/{}".format(cwd, dataset, id)) or new:
         save_concave_hull(dataset, id)
 
-    e = gpd.read_file("{}/data/{}_shp/{}.shp".format(cwd, dataset, id))
-    lon_lat_geom = e.to_crs("epsg:4326")
-    shp = lon_lat_geom.geometry
-    coords = [list(shp.geometry.exterior[row_id].coords) for row_id in range(shp.shape[0])]
-    return coords
+    #It will never actually get to 10000 will trigger error and then we know to leave
+    coords_list = []
+    for i in range(0, 10000):
+        try:
+            e = gpd.read_file("{}/data/{}_shp/{}/{}.shp".format(cwd, dataset, id, i))
+        except:
+            break
+        lon_lat_geom = e.to_crs("epsg:4326")
+        shp = lon_lat_geom.geometry
+        tf = shp.geom_type.values != 'Polygon'
+        tf = tf[0]
+        if tf:
+            continue
+        coords = [list(shp.geometry.exterior[row_id].coords) for row_id in range(shp.shape[0])][0]
+        coords_list.append(coords)
+    return coords_list
+
 
 def proj_poly(spher_poly, proj=ccrs.AzimuthalEquidistant().proj4_init):
     """ Given a spherical polygon and a projection, creates a shapely geometry on the plane """
@@ -446,10 +510,12 @@ def proj_poly(spher_poly, proj=ccrs.AzimuthalEquidistant().proj4_init):
 
     pts = zip(lons, lats)
 
-    coords = proj_points(pts)
+    coords = proj_points(pts, proj=proj)
 
     poly = geometry.Polygon(coords)
+    poly = poly.buffer(0)
     return poly
+
 
 def inv_proj_poly(poly, init_crs=ccrs.AzimuthalEquidistant().proj4_init, center=None):
     """ Given shapely polygon will return spherical polygon from inverse projection """
@@ -464,18 +530,19 @@ def inv_proj_poly(poly, init_crs=ccrs.AzimuthalEquidistant().proj4_init, center=
 
     return spher_poly
 
+
 def proj_points(points, proj=ccrs.AzimuthalEquidistant().proj4_init):
     """ Given set of spherical points (lons and lats) will project in projection specified """
 
     lons, lats = zip(*points)
 
     df = pd.DataFrame({
-    'Lon' : lons,
-    'Lat' : lats
+        'Lon': lons,
+        'Lat': lats
     })
 
     geom = [geometry.Point(xy) for xy in zip(df.Lon, df.Lat)]
-    crs = {'init' : 'epsg:4326'}
+    crs = {'init': 'epsg:4326'}
     gdf = gpd.GeoDataFrame(df, crs=crs, geometry=geom)
     gdf_proj = gdf.to_crs(proj)
 
@@ -484,13 +551,14 @@ def proj_points(points, proj=ccrs.AzimuthalEquidistant().proj4_init):
 
     return coords
 
+
 def inv_proj_points(points, init_crs=ccrs.AzimuthalEquidistant().proj4_init):
     """ Given a set of points in projected spaced will return points in spherical space coressponding to those points """
 
     X, Y = zip(*points)
     df = pd.DataFrame({
-        'X' : X,
-        'Y' : Y
+        'X': X,
+        'Y': Y
     })
 
     geom = [geometry.Point(xy) for xy in zip(df.X, df.Y)]
@@ -502,13 +570,14 @@ def inv_proj_points(points, init_crs=ccrs.AzimuthalEquidistant().proj4_init):
 
     return coords
 
+
 def spherical_unary_union(polygon_list):
     """ Given a list of spherical polygon returns the unary union of them """
 
     big_poly = polygon_list[0]
     for poly in polygon_list[1:]:
         big_poly = big_poly.union(poly)
-    
+
     return big_poly
 
 
