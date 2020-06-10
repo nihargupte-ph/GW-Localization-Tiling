@@ -367,7 +367,7 @@ class Agent:
             plt.close()
 
         remaining_region = region.difference(unary_union(self.circle_list)).intersection(region)
-        if remaining_region.area < 5:  # Check if we even need to update
+        if remaining_region.area < 1:  # Check if we even need to update
             ret = True
             scheme = None
 
@@ -405,7 +405,7 @@ class Agent:
 
                 new_region = region.difference(unary_union(self.circle_list)).intersection(region)
                 
-                if (new_region.area < 5):  # Check if we even need to update
+                if (new_region.area < 1):  # Check if we even need to update
                     ret = True
                     break
                 else:
@@ -415,7 +415,7 @@ class Agent:
                     for poly in list(new_region): 
                         if isinstance(poly, geometry.LineString):
                             continue
-                        if poly.area > 10:
+                        if poly.area > 1:
                             num_new_circles = np.ceil(poly.area / self.circle_list[0].area) #1 leeway circles
                         else:
                             num_new_circles = 0
@@ -436,7 +436,7 @@ class Agent:
             new_region = region.difference(unary_union(self.circle_list)).intersection(region)
             plt.close()
             
-            if (new_region.area < 5):  # Check if we even need to update
+            if (new_region.area < 1):  # Check if we even need to update
                 ret = True
             else:
                 ret = False
@@ -859,6 +859,8 @@ def ga(
         "{}/crossover_frames".format(cwd),
     ]
     for folder in folders_to_clear:
+        if not os.path.exists(folder):
+            os.mkdir(folder)
         for filename in os.listdir(folder):
             file_path = os.path.join(folder, filename)
             try:
@@ -888,6 +890,7 @@ def ga(
     print()
 
     for generation in range(generations):
+        break #NOTE TEMPORARY
 
         generation_start = time.process_time()
 
@@ -961,6 +964,7 @@ def ga(
         print()
         print()
 
+
     print("Finished. Total execution time {}".format(time.process_time() - start))
     try:
         ret = agent_list[0]
@@ -973,31 +977,32 @@ global population
 population = 100
 
 global generations
-generations = 6
+generations = 1
 
 global colors
 colors = ["#ade6e6", "#ade6ad", "#e6ade6", "#e6adad"]
 
-# bounding_box = {
-#     "bottom left": (-2, -2),
-#     "bottom right": (2, -2),
-#     "top right": (2, 2),
-#     "top left": (-2, 2),
-# }
+bounding_box = {
+    "bottom left": (-2, -2),
+    "bottom right": (2, -2),
+    "top right": (2, 2),
+    "top left": (-2, 2),
+}
 
-# random_polygon_pts = generatePolygon(
-#     ctrX=0, ctrY=0, aveRadius=50, irregularity=0.35, spikeyness=0.2, numVerts=10
-# )
-# random_polygon = geometry.Polygon(random_polygon_pts)
+random_polygon_pts = generatePolygon(
+    ctrX=0, ctrY=0, aveRadius=50, irregularity=0.35, spikeyness=0.2, numVerts=10
+)
+
+random_polygon = geometry.Polygon(random_polygon_pts)
 
 
-# ga(
-#     random_polygon,
-#     0.25,
-#     bounding_box,
-#     initial_length=10,
-#     plot_regions=True,
-#     save_agents=False,
-#     plot_crossover=False,
-# )
+ga(
+    random_polygon,
+    0.25,
+    bounding_box,
+    initial_length=10,
+    plot_regions=True,
+    save_agents=False,
+    plot_crossover=False,
+)
 
