@@ -21,9 +21,6 @@ from collections import defaultdict
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astropy import units as u
-from ligo.skymap.io import fits
-import ligo.skymap.plot
-from ligo.skymap.postprocess import find_greedy_credible_levels
 from matplotlib.path import Path
 from matplotlib import pyplot as plt
 import numpy as np

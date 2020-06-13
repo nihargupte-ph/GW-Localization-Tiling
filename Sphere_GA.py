@@ -27,7 +27,7 @@ def get_circle(phi, theta, fov, step=16):
     return ret
 
 dataset = "design_bns_astro"  # name of dataset ('design_bns_astro' or 'design_bbh_astro')
-for id in [306]:
+for id in [305]:
 
     fov = 8  # FOV diameter in degrees
 

@@ -367,7 +367,7 @@ class Agent:
             plt.close()
 
         remaining_region = region.difference(unary_union(self.circle_list)).intersection(region)
-        if remaining_region.area < 1:  # Check if we even need to update
+        if remaining_region.area < granularity + .0001:  # Check if we even need to update
             ret = True
             scheme = None
 
@@ -405,7 +405,7 @@ class Agent:
 
                 new_region = region.difference(unary_union(self.circle_list)).intersection(region)
                 
-                if (new_region.area < 1):  # Check if we even need to update
+                if (new_region.area < granularity + .0001):  # Check if we even need to update
                     ret = True
                     break
                 else:
@@ -434,9 +434,8 @@ class Agent:
         elif scheme == 'standard':
             self.circle_list = repair_agent_BFGS(self.center_list, region, self.radius, self.bounding_box, plot=plot, generation=generation, agent_number=agent_number)
             new_region = region.difference(unary_union(self.circle_list)).intersection(region)
-            plt.close()
             
-            if (new_region.area < 1):  # Check if we even need to update
+            if (new_region.area < granularity + .0001):  # Check if we even need to update
                 ret = True
             else:
                 ret = False
@@ -890,8 +889,6 @@ def ga(
     print()
 
     for generation in range(generations):
-        break #NOTE TEMPORARY
-
         generation_start = time.process_time()
 
         print("\ngeneration number: {}".format(generation))
@@ -974,13 +971,16 @@ def ga(
 
 
 global population
-population = 100
+population = 10
 
 global generations
-generations = 1
+generations = 4
 
 global colors
 colors = ["#ade6e6", "#ade6ad", "#e6ade6", "#e6adad"]
+
+global granularity
+granularity = 0
 
 bounding_box = {
     "bottom left": (-2, -2),
