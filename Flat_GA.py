@@ -169,7 +169,9 @@ class Agent:
         empty_region = region.difference(unary_union(self.circle_list))
 
         if fill:
-            if isinstance(self_intersection, geometry.MultiPolygon):
+            if isinstance(self_intersection, list):
+                pass
+            elif isinstance(self_intersection, geometry.MultiPolygon):
                 for p1 in self_intersection:
                     x1, y1 = p1.exterior.xy
 
@@ -196,6 +198,7 @@ class Agent:
                         plt.fill(x3, y3, c=color3, zorder=zorder)
                     else:
                         ax.fill(x3, y3, c=color3, zorder=zorder)
+
             elif isinstance(region_nonintersection, geometry.Polygon):
                 p3 = region_nonintersection
                 x3, y3 = p3.exterior.xy
@@ -856,6 +859,7 @@ def ga(
         "{}/frames".format(cwd),
         "{}/repair_frames".format(cwd),
         "{}/crossover_frames".format(cwd),
+        "{}/saved_agents".format(cwd)
     ]
     for folder in folders_to_clear:
         if not os.path.exists(folder):
@@ -880,11 +884,6 @@ def ga(
     before = time.process_time()
     print("Repairing Agents")
     agent_list = repair_agents(agent_list, region, bounding_box, plot=plot_regions, generation=0, guess=True, scheme='recursive')
-    if save_agents:
-        os.mkdir("{}/saved_agents/generation_{}".format(cwd, generation))
-        for i, agent in enumerate(agent_list):
-            with open("{}/saved_agents/generation_{}/agent_{}.obj".format(generation, i),"wb",) as output:
-                pickle.dump(agent, output, pickle.HIGHEST_PROTOCOL)
     print("Sucessful. {} Agents remain. Run time {}".format(len(agent_list), time.process_time() - before))
     print()
 
@@ -982,27 +981,30 @@ colors = ["#ade6e6", "#ade6ad", "#e6ade6", "#e6adad"]
 global granularity
 granularity = 0
 
-bounding_box = {
-    "bottom left": (-2, -2),
-    "bottom right": (2, -2),
-    "top right": (2, 2),
-    "top left": (-2, 2),
-}
+# bounding_box = {
+#     "bottom left": (-2, -2),
+#     "bottom right": (2, -2),
+#     "top right": (2, 2),
+#     "top left": (-2, 2),
+# }
 
-random_polygon_pts = generatePolygon(
-    ctrX=0, ctrY=0, aveRadius=50, irregularity=0.35, spikeyness=0.2, numVerts=10
-)
+# random_polygon_pts = generatePolygon(
+#     ctrX=0, ctrY=0, aveRadius=50, irregularity=0.35, spikeyness=0.2, numVerts=10
+# )
 
-random_polygon = geometry.Polygon(random_polygon_pts)
+# random_polygon = geometry.Polygon(random_polygon_pts)
 
 
-ga(
-    random_polygon,
-    0.25,
-    bounding_box,
-    initial_length=10,
-    plot_regions=True,
-    save_agents=False,
-    plot_crossover=False,
-)
+# best_agent = ga(
+#     random_polygon,
+#     0.25,
+#     bounding_box,
+#     initial_length=10,
+#     plot_regions=True,
+#     save_agents=True,
+#     plot_crossover=False,
+# )
 
+# best_agent.plot_agent(random_polygon, bounding_box)
+# plt.plot(*random_polygon.exterior.coords.xy)
+# plt.show()
