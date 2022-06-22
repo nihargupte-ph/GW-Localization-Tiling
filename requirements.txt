@@ -36,7 +36,7 @@ matplotlib==3.2.0
 more-itertools==8.2.0
 munch==2.5.0
 networkx==2.4
-numpy==1.18.1
+numpy==1.22.0
 olefile==0.46
 packaging==20.1
 pamela==1.0.0
